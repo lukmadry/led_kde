@@ -1,0 +1,179 @@
+import numpy as np
+from scipy import stats
+
+import datetime
+import argparse
+
+# these four are only necessary for logging
+import h5py
+import os
+import json
+import matplotlib.pyplot as plt
+
+# other parts of the project
+import distributions
+from tools import sample_via_importance_resampling, kl_divergence_observations
+from kde import compute_kde, kde_sampled_pdf_func
+
+
+q_dist = stats.norm(loc=0, scale=5)
+
+descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median, 'max': np.max}
+comparative_functions = {'kl_d': kl_divergence_observations}
+
+def custom_proposal_pdf(x):
+	return q_dist.pdf(x)
+
+def custom_proposal_sampler(n):
+	return q_dist.rvs(size=n)
+
+def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid, 
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+	descriptive_metrics=['mean', 'sd', 'max'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
+	"""
+
+	n_trials : int
+	starting_dist : a function that computes density value
+	grid : a grid of values on which we will evaluate densities
+
+	"""
+
+	current_dist = starting_dist 
+
+	all_dists = []
+	statistics = []
+
+	for i in range(n_trials):
+		# first sample through IS
+		# then use this IS to compute new distribution with KDE
+		# TODO to rethink the order, the first one is kind of redundant, I think ?
+
+		samples_from_current_pdf, ess = sample_via_importance_resampling(
+			target_pdf=current_dist, 
+			proposal_pdf=custom_proposal_pdf,
+			proposal_sampler=custom_proposal_sampler,
+			n_candidates=n_candidates, n_samples=n_samples)
+
+		kde_from_samples = compute_kde(
+			x=grid, 
+			observations=samples_from_current_pdf, 
+			norm_scale=kde_scale,
+			scale_is_variance=True) # produces values of kde on grid, inferred from samples_from_current_pdf
+
+		all_dists.append(kde_from_samples)
+
+		current_dist = kde_sampled_pdf_func(grid=grid, kde=kde_from_samples) # a function that will be put in the sampler in the next round
+
+		stat = {}
+		stat['is_ess'] = ess
+		for s in descriptive_metrics:
+			stat[s] = descriptive_functions[s](kde_from_samples)
+
+		statistics.append(stat)
+		if (1+i) % verbosity_freq == 0:
+			s = f"Trial nr: {1+i}. Descriptive statistics: "
+			for key, val in stat.items():
+				s += f"{key}: {val:.3f} |"
+			s += "\n"
+			print(s)
+
+	if return_final_samples:
+		return (samples_from_current_pdf, np.asarray(all_dists, dtype=float), statistics)
+	return np.asarray(all_dists, dtype=float), statistics
+
+
+def run_recurrent_led_kde_with_forgetting(n_trials, starting_dist, grid, 
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+	descriptive_metrics=['mean', 'sd', 'max'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
+	"""
+
+	"""
+
+	current_dist = starting_dist
+
+	for i in range(n_trials):
+		pass
+
+
+if __name__ == '__main__':
+	parser = argparse.ArgumentParser()
+	parser.add_argument("--n", required=True, type=int)
+	parser.add_argument("--load_config_from_file", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--dim", default=1, type=int)
+	parser.add_argument("--lower_bd", default=-5, type=float) # possibly multiple values if dim > 1, but to be changed later on
+	parser.add_argument("--upper_bd", default=5, type=float)
+	parser.add_argument("--grid_size", default=500, type=int)
+	parser.add_argument("--method", choices=['led', 'kde'], type=str, default='kde')
+
+	# distribution arguments
+	parser.add_argument("--centers", nargs='+', default=[-1, 1])
+	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35])
+
+	# kde arguments
+	parser.add_argument("--t_scale", default=0.02, type=float)
+	parser.add_argument("--k_scale", default=0.02, type=float)
+	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--n_candidates", default=10000, type=int)
+	parser.add_argument("--n_samples", default=10000, type=int)
+
+	# arguments related to logging
+	parser.add_argument("--verbosity_freq", default=5, type=int)
+	parser.add_argument("--display_and_save_an_image", action=argparse.BooleanOptionalAction, default=True)
+
+	args = parser.parse_args()
+
+	log_dir = os.path.join("results" , datetime.datetime.now().strftime("%A_%d_%B_%Y_%I:%M%p"))
+
+	if args.load_config_from_file:
+		raise NotImplementedError("loading experiment config from file is not implemented yet")
+
+	grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
+	true_distribution = distributions.generate_pdf_univariate_gaussian_peaks(
+		grid=grid, 
+		centers=args.centers, 
+		scales=args.scales, 
+		scale_is_variance=args.scale_is_variance)
+
+	print(f"True distribution:\nMean: {np.mean(true_distribution):.4f}. Std: {np.std(true_distribution):.4f}\n")
+
+	true_dist_func = kde_sampled_pdf_func(grid=grid, kde=true_distribution) # TODO not so great naming, to be reviewed
+
+	# TODO to be made more concise, a lot repetition
+	run_kwargs = dict(
+		n_trials=args.n, 
+		starting_dist=true_dist_func, 
+		grid=grid, 
+		kde_scale=args.k_scale,
+		scale_is_variance=args.scale_is_variance,
+		verbosity_freq=args.verbosity_freq,
+		return_final_samples=args.display_and_save_an_image,
+		n_candidates=args.n_candidates,
+		n_samples=args.n_samples)
+
+	if args.display_and_save_an_image:
+		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+	else:
+		all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+
+	if not os.path.exists(log_dir):
+		os.makedirs(log_dir, exist_ok=True)
+
+	args_dict = vars(args)
+
+	if args.display_and_save_an_image:
+		# TODO add histograms on the grid
+		plt.plot(all_dist[-1], color='orange')
+		plt.plot(all_dist[0], color='blue')
+		plt.title("Blue - original distribution, orange - a final distribution")
+		plt.show()
+		plt.savefig(os.path.join(log_dir, "density_plots.png"))
+
+	with open(os.path.join(log_dir, "kwargs.json"), "w") as f:
+		json.dump(args_dict, f)
+
+	with open(os.path.join(log_dir, "stats.json"), "w") as f:
+		json.dump(stat, f)
+
+	filename = os.path.join(log_dir, "distribution_logs.hdf5")
+	with h5py.File(filename, "w") as f:
+		f.create_dataset("distribution_grids", (args.n, args.grid_size), data=all_dist)
