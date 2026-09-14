@@ -1,5 +1,6 @@
 import numpy as np
 from scipy.stats import norm, multivariate_normal
+from numbers import Number
 
 from tools import convert_planar_to_xy
 
@@ -19,12 +20,12 @@ class GaussianCombination:
 			raise ValueError("scales argument should be either equal to length of centers or take only one element")
 
 		if len(self.scales) == 1:
-			self.scales = [self.scales] * self.N # not really optimal, TODO change
+			self.scales = [self.scales[0]] * self.N # not really optimal, TODO change
 
 		self.distributions = []
 
 		self.multivar = False
-		if len(self.centers[0]) > 1:
+		if not isinstance(self.centers[0], Number):
 			self.multivar = True
 
 		for c, s in zip(self.centers, self.scales):
@@ -43,24 +44,29 @@ class GaussianCombination:
 		self.weights = np.array(self.weights)
 
 	def pdf(self, grid):
-
 		weights = self.weights/np.sum(self.weights)
-		final_density = np.zeros_like(grid)
-
-		for i in range(self.N):
-			final_density += weights[i]*self.distributions[i].pdf(grid)
-		return final_density
+		if not self.multivar:
+			final_density = np.zeros_like(grid)
+			for i in range(self.N):
+				final_density += weights[i]*self.distributions[i].pdf(grid)
+			return final_density
+		else:
+			final_density = np.zeros(grid.shape[:-1]) # maybe we can parametrize it or leave more choice, idk now
+			for i in range(self.N):
+				final_density += weights[i]*self.distributions[i].pdf(grid)
+			return final_density
 
 	def rvs(self, no_samples):
 
 		weights = self.weights/np.sum(self.weights)
-		idx = np.random.choice(self.N, no_samples, weights)
+		idx = np.random.choice(a=self.N, size=no_samples, p=weights)
 		samples = []
 		for i in idx:
 			samples.append(self.distributions[i].rvs())
 		return np.array(samples)
 
-# TODO change it into something that outputs GaussianCombination with points on the spiral
+# this does not work very well for now, it doesn't crash but the result is not what I'd expect
+# TODO check some other implementation of a spiral curve
 def generate_spiral_comb(no_pts, starting_radius=1, starting_angle=0.5, delta_angle_rad=0.3,
 						 radius_decay=0.99, scale=0.3, scale_is_variance=False):
 	
@@ -79,5 +85,5 @@ def generate_spiral_comb(no_pts, starting_radius=1, starting_angle=0.5, delta_an
 		radius *= radius_decay
 		angle += delta_angle_rad
 
-	combination = GaussianCombination(centers=centers, scales=scale, scale_is_variance=False)
+	combination = GaussianCombination(centers=centers, scales=[cov], scale_is_variance=False)
 	return combination

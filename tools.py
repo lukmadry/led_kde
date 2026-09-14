@@ -39,7 +39,7 @@ def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	result, _ = integrate.quad(integrand, support_g[0], support_g[1])
 	return result
 
-def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=(-10, 10)):
+def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
 	Parameters:
 		f_pdf: continuous callable
@@ -48,6 +48,8 @@ def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=(-10, 10)):
 		y_bounds: tuple (y_min, y_max) covering the support where g(y) > 0
 	"""
 	n_y = len(g_pdf_grid)
+	if y_bounds is None:
+		y_bounds = (x_grid.min(), x_grid.max())
 	y = np.linspace(y_bounds[0], y_bounds[1], n_y)
 	# 2D broadcasting: (M, 1) - (1, N) -> shape (M, N)
 	diffs = x_grid[:, None] - y
@@ -57,6 +59,23 @@ def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=(-10, 10)):
 	# print("integrand matrix computed")
 	# Integrate along the y axis (axis=1) using trapezoidal rule
 	return np.trapezoid(integrand_matrix, y, axis=1)
+
+def convolve_continuous_grid_multidim(f_pdf, g_pdf_grid, x_grid):
+	"""
+
+	Parameters:
+		f_pdf: continuous callable
+		g_pdf_grid: mD array of density values for g evalueated on y
+		x_grid: m arrays of , typically obtained through np.dstack applied to np.mgrid
+
+	"""
+
+def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid):
+	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid
+	if len(x_grid.shape) == 1:
+		return convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid)
+	else:
+		raise NotImplementedError("multidimensional grids not supported yet")
 
 def sample_via_importance_resampling(
 	target_pdf,

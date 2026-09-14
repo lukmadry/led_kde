@@ -1,9 +1,7 @@
 import numpy as np
 from functools import partial
 from numbers import Number
-
 from scipy.stats import norm
-from scipy.signal import convolve
 
 from tools import convolve_continuous_grid, match_x_to_grid_and_val
 
@@ -24,7 +22,6 @@ def compute_kde_scott(x, observations):
         val += norm.pdf(x - observations[i], scale=h)
     return val/N
 
-
 def kde_sampled_pdf_wrapper(x, grid, kde):
     if isinstance(x, Number):
         x = [x]
@@ -34,20 +31,19 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
     return vals
 
 def kde_sampled_pdf_func(grid, kde):
-	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
-
+    return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
 def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8):
     q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, scale_is_variance=True)
     k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
     k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
-    return np.exp(k_log_ql_conv)/(k_ql_conv)
+    return np.exp(k_log_ql_conv)/k_ql_conv
 
-
+# TODO extend to multidimensional case
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8, scale_is_variance=True):
     if scale_is_variance:
         t_scale = np.sqrt(t_scale)
-    q_L_approx = compute_kde(x=grid, observations=observations, kernel=norm.pdf, scale=t_scale)
+    q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, scale_is_variance=scale_is_variance)
     k_log_ql_conv = convolve_continuous_grid(k_pdf, np.log(eps+q_L_approx), grid)
     expklog = np.exp(k_log_ql_conv)
     Z = np.sum(expklog) * (grid[1] - grid[0])
