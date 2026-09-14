@@ -192,7 +192,7 @@ if __name__ == '__main__':
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max: {np.max(true_samples)}\n")
 
 
-		run_kwargs.update(dict(starting_dist=true_dist_func.pdf))
+		run_kwargs.update(dict(starting_dist=true_mixture.pdf))
 		if args.display_and_save_an_image:
 			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
 		else:
