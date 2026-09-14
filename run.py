@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import stats
+from scipy.stats import norm
 
 import datetime
 import argparse
@@ -13,7 +14,7 @@ import matplotlib.pyplot as plt
 # other parts of the project
 import distributions
 from tools import sample_via_importance_resampling, kl_divergence_observations
-from kde import compute_kde, kde_sampled_pdf_func
+from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott
 
 
 q_dist = stats.norm(loc=0, scale=5)
@@ -26,6 +27,8 @@ def custom_proposal_pdf(x):
 
 def custom_proposal_sampler(n):
 	return q_dist.rvs(size=n)
+
+# these two can be put under some common function or a class where only the core is going to be changed
 
 def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid, 
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
@@ -82,17 +85,55 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 	return np.asarray(all_dists, dtype=float), statistics
 
 
-def run_recurrent_led_kde_with_forgetting(n_trials, starting_dist, grid, 
+def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
 	descriptive_metrics=['mean', 'sd', 'max'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
 	"""
 
 	"""
 
-	current_dist = starting_dist
+	all_dist = []
+	statistics = []
+
+	obs = initial_observations
+	if scale_is_variance:
+		t_scale = np.sqrt(t_scale)
+		kde_scale = np.sqrt(kde_scale)
+
+	l_sampler = norm(scale=t_scale).rvs
+	k_sampler = norm(scale=kde_scale).rvs
+	k_pdf = norm(scale=kde_scale).pdf
 
 	for i in range(n_trials):
-		pass
+		
+		led_samples = sample_led_kde(
+						n_samples=n_samples, 
+						observations=obs,
+						grid=grid,
+						t_scale=t_scale,
+						l_sampler=l_sampler,
+						k_sampler=k_sampler,
+						k_pdf=k_pdf
+						)
+
+		all_dist.append(led_samples)
+		stat = {}
+		# TODO find a way to put the following in a single function to remove duplication
+		for s in descriptive_metrics:
+			stat[s] = descriptive_functions[s](led_samples)
+
+		statistics.append(stat)
+		if (1+i) % verbosity_freq == 0:
+			s = f"Trial nr: {1+i}. Descriptive statistics: "
+			for key, val in stat.items():
+				s += f"{key}: {val:.3f} |"
+			s += "\n"
+			print(s)
+
+		obs = led_samples
+
+	return np.asarray(all_dist, dtype=float), statistics
+
 
 
 if __name__ == '__main__':
@@ -106,10 +147,10 @@ if __name__ == '__main__':
 	parser.add_argument("--method", choices=['led', 'kde'], type=str, default='kde')
 
 	# distribution arguments
-	parser.add_argument("--centers", nargs='+', default=[-1, 1])
-	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35])
+	parser.add_argument("--centers", nargs='+', default=[-1, 1], type=float)
+	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35], type=float)
 
-	# kde arguments
+	# kde or led-kde arguments
 	parser.add_argument("--t_scale", default=0.02, type=float)
 	parser.add_argument("--k_scale", default=0.02, type=float)
 	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=True)
@@ -119,6 +160,7 @@ if __name__ == '__main__':
 	# arguments related to logging
 	parser.add_argument("--verbosity_freq", default=5, type=int)
 	parser.add_argument("--display_and_save_an_image", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--dump_intermediary_dist", action=argparse.BooleanOptionalAction, default=False)
 
 	args = parser.parse_args()
 
@@ -128,20 +170,10 @@ if __name__ == '__main__':
 		raise NotImplementedError("loading experiment config from file is not implemented yet")
 
 	grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
-	true_distribution = distributions.generate_pdf_univariate_gaussian_peaks(
-		grid=grid, 
-		centers=args.centers, 
-		scales=args.scales, 
-		scale_is_variance=args.scale_is_variance)
-
-	print(f"True distribution:\nMean: {np.mean(true_distribution):.4f}. Std: {np.std(true_distribution):.4f}\n")
-
-	true_dist_func = kde_sampled_pdf_func(grid=grid, kde=true_distribution) # TODO not so great naming, to be reviewed
-
-	# TODO to be made more concise, a lot repetition
+	
+	# TODO to be made more concise, a lot of repetition
 	run_kwargs = dict(
 		n_trials=args.n, 
-		starting_dist=true_dist_func, 
 		grid=grid, 
 		kde_scale=args.k_scale,
 		scale_is_variance=args.scale_is_variance,
@@ -150,21 +182,50 @@ if __name__ == '__main__':
 		n_candidates=args.n_candidates,
 		n_samples=args.n_samples)
 
-	if args.display_and_save_an_image:
-		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
-	else:
-		all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+	true_mixture = distributions.GaussianCombination(
+		centers=args.centers,
+		scales=args.scales,
+		scale_is_variance=args.scale_is_variance)
+
+	if args.method == 'kde':
+		true_samples = true_mixture.rvs(args.n_samples)
+		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max: {np.max(true_samples)}\n")
+
+
+		run_kwargs.update(dict(starting_dist=true_dist_func.pdf))
+		if args.display_and_save_an_image:
+			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+		else:
+			all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+
+
+	elif args.method == 'led':
+		init_obs = true_mixture.rvs(args.n_samples)
+		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max: {np.max(init_obs)}\n")
+
+		run_kwargs.update(dict(t_scale=args.t_scale, initial_observations=init_obs))
+		all_dist, stat = run_recurrent_led_kde_with_forgetting(**run_kwargs)
 
 	if not os.path.exists(log_dir):
 		os.makedirs(log_dir, exist_ok=True)
 
 	args_dict = vars(args)
 
-	if args.display_and_save_an_image:
+	if args.display_and_save_an_image and args.method == 'kde':
 		# TODO add histograms on the grid
 		plt.plot(all_dist[-1], color='orange')
 		plt.plot(all_dist[0], color='blue')
 		plt.title("Blue - original distribution, orange - a final distribution")
+		plt.show()
+		plt.savefig(os.path.join(log_dir, "density_plots.png"))
+
+	if args.display_and_save_an_image and args.method == 'led':
+		# we have to compute a simple KDE from observations ?
+		init_dist = true_mixture.pdf(grid)
+		final_dist = compute_kde_scott(grid, all_dist[-1])
+		plt.plot(init_dist, color='orange')
+		plt.plot(final_dist, color='blue')
+		plt.title("Orange - original distribution, blue - a final distribution")
 		plt.show()
 		plt.savefig(os.path.join(log_dir, "density_plots.png"))
 
@@ -174,6 +235,7 @@ if __name__ == '__main__':
 	with open(os.path.join(log_dir, "stats.json"), "w") as f:
 		json.dump(stat, f)
 
-	filename = os.path.join(log_dir, "distribution_logs.hdf5")
-	with h5py.File(filename, "w") as f:
-		f.create_dataset("distribution_grids", (args.n, args.grid_size), data=all_dist)
+	if args.dump_intermediary_dist:
+		filename = os.path.join(log_dir, "distribution_logs.hdf5")
+		with h5py.File(filename, "w") as f:
+			f.create_dataset("distribution_grids", (args.n, args.grid_size), data=all_dist)

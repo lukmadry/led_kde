@@ -24,7 +24,6 @@ def match_x_to_grid_and_val(x, grid, values_grid, raise_error_if_outside=False, 
     idx = int( (x - grid_min) / grid_step )
     
     if interpolation:
-        dleft = x - grid[idx]
         dright = grid[idx+1] - x # no problem with it because if we are here then x is strictly smaller than the final value
         weight = dright / grid_step
         return values_grid[idx] * weight + values_grid[idx+1] * (1-weight)
@@ -52,10 +51,10 @@ def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=(-10, 10)):
 	y = np.linspace(y_bounds[0], y_bounds[1], n_y)
 	# 2D broadcasting: (M, 1) - (1, N) -> shape (M, N)
 	diffs = x_grid[:, None] - y
-	print("about to compute integrand matrix")
+	# print("about to compute integrand matrix")
 	# Evaluate integrand matrix: f(x - y) * g(y)
 	integrand_matrix = f_pdf(diffs) * g_pdf_grid
-	print("integrand matrix computed")
+	# print("integrand matrix computed")
 	# Integrate along the y axis (axis=1) using trapezoidal rule
 	return np.trapezoid(integrand_matrix, y, axis=1)
 
@@ -238,3 +237,8 @@ def kl_divergence_grid_vs_grid(grid, p_pdf, q_pdf, eps=1e-12):
 
 	# 5. Compute KL divergence using SciPy
 	return stats.entropy(p_pmf, q_pmf)
+
+def convert_planar_to_xy(radius, angle):
+		x = radius * np.cos(angle)
+		y = radius * np.sin(angle)
+		return x, y

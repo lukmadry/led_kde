@@ -7,7 +7,7 @@ from scipy.signal import convolve
 
 from tools import convolve_continuous_grid, match_x_to_grid_and_val
 
-def compute_kde(x, observations, norm_scale, scale_is_variance):
+def compute_kde(x, observations, norm_scale, scale_is_variance=True):
 	N = len(observations)
 	val = 0
 	if scale_is_variance:
@@ -15,6 +15,14 @@ def compute_kde(x, observations, norm_scale, scale_is_variance):
 	for i in range(N):
 		val += norm.pdf(x-observations[i], scale=norm_scale)
 	return val / N
+
+def compute_kde_scott(x, observations):
+    N = len(observations)
+    h = N**(-1/5.)
+    val = 0
+    for i in range(N):
+        val += norm.pdf(x - observations[i], scale=h)
+    return val/N
 
 
 def kde_sampled_pdf_wrapper(x, grid, kde):
@@ -30,10 +38,20 @@ def kde_sampled_pdf_func(grid, kde):
 
 
 def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8):
-    q_L_approx = compute_kde(x=grid, observations=observations, kernel=norm.pdf, scale=t_scale)
-    k_ql_conv = convolve_continuous_grid(k_pdf, q_L_approx, grid)
-    k_log_ql_conv = convolve_continuous_grid(k_pdf, np.log(eps + q_L_approx), grid)
+    q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, scale_is_variance=True)
+    k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
+    k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
     return np.exp(k_log_ql_conv)/(k_ql_conv)
+
+
+def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8, scale_is_variance=True):
+    if scale_is_variance:
+        t_scale = np.sqrt(t_scale)
+    q_L_approx = compute_kde(x=grid, observations=observations, kernel=norm.pdf, scale=t_scale)
+    k_log_ql_conv = convolve_continuous_grid(k_pdf, np.log(eps+q_L_approx), grid)
+    expklog = np.exp(k_log_ql_conv)
+    Z = np.sum(expklog) * (grid[1] - grid[0])
+    return expklog / Z
 
 
 def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
