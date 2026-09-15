@@ -135,7 +135,7 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 	return np.asarray(all_dist, dtype=float), statistics
 
 
-
+# TODO will have to be extended to treat other distributions than gaussian mixtures
 if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--n", required=True, type=int)
@@ -182,7 +182,7 @@ if __name__ == '__main__':
 		n_candidates=args.n_candidates,
 		n_samples=args.n_samples)
 
-	true_mixture = distributions.GaussianCombination(
+	true_mixture = distributions.GaussianMixture(
 		centers=args.centers,
 		scales=args.scales,
 		scale_is_variance=args.scale_is_variance)

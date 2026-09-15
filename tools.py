@@ -1,5 +1,6 @@
 import numpy as np
 from scipy import integrate
+from scipy.stats import entropy
 
 # AI use : some (most) of these functions have been written with Gemini Flash
 
@@ -39,6 +40,7 @@ def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	result, _ = integrate.quad(integrand, support_g[0], support_g[1])
 	return result
 
+# TODO is it the best way to do this ?
 def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
 	Parameters:
@@ -60,22 +62,52 @@ def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# Integrate along the y axis (axis=1) using trapezoidal rule
 	return np.trapezoid(integrand_matrix, y, axis=1)
 
-def convolve_continuous_grid_multidim(f_pdf, g_pdf_grid, x_grid):
+def convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""
 
 	Parameters:
 		f_pdf: continuous callable
-		g_pdf_grid: mD array of density values for g evalueated on y
-		x_grid: m arrays of , typically obtained through np.dstack applied to np.mgrid
+		g_pdf_grid: mD array of density values for g evaluated on y
+		x_grid: 1) 2 arrays of shape (N, N), typically obtained through np.dstack applied to np.mgrid
+				OR 2) 2 1D grids
 
 	"""
+	ns_y = g_pdf_grid.shape
 
-def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid):
+	if isinstance(x_grid, (tuple, list)) and len(x_grid) == 2: # the case of two 1D grids
+		x1_1d, x2_1d = x_grid
+		X, Y = np.meshgrid(x1_1d, x2_1d)
+		x_grid = np.dstack([X, Y])
+	else:
+		x_grid = np.asarray(x_grid, float)
+		x1_1d = x_grid[0, :, 0]
+		x2_1d = x_grid[:, 0, 1]
+
+	if y_bounds is None:
+		y_grid = x_grid.copy()
+		y1_1d = x1_1d
+		y2_1d = x2_1d
+	else:
+		y1_1d = np.linspace(y_bounds[0][0], y_bounds[0][1], ns_y[0])
+		y2_1d = np.linspace(y_bounds[1][0], y_bounds[1][1], ns_y[1])
+		y_grid = np.dstack((y1_1d, y2_1d))
+	# TODO improve efficiency, takes an awful lot of memory if the grid is dense, you can use FFT
+    # you can do it exploiting translation invariance of the first one
+	diffs = x_grid[:, :, None, None] - y_grid[None, None, :, :]
+	integrand_matrix = f_pdf(diffs) * g_pdf_grid[None, None, :, :]
+	integrand_matrix = np.trapezoid(integrand_matrix, y2_1d, axis=3)
+	integrand_matrix = np.trapezoid(integrand_matrix, y1_1d, axis=2)
+	return integrand_matrix
+
+
+def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid
 	if len(x_grid.shape) == 1:
-		return convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid)
+		return convolve_continuous_grid_1d(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, y_bounds=y_bounds)
+	elif isinstance(x_grid, (tuple, list)) and len(x_grid) == 2 or len(x_grid.shape) == 3:
+		return convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid)
 	else:
-		raise NotImplementedError("multidimensional grids not supported yet")
+		raise NotImplementedError("convolution on more than two dimensions is not implemented and likely won't be")
 
 def sample_via_importance_resampling(
 	target_pdf,
@@ -255,9 +287,9 @@ def kl_divergence_grid_vs_grid(grid, p_pdf, q_pdf, eps=1e-12):
 	q_pmf /= np.sum(q_pmf)
 
 	# 5. Compute KL divergence using SciPy
-	return stats.entropy(p_pmf, q_pmf)
+	return entropy(p_pmf, q_pmf)
 
 def convert_planar_to_xy(radius, angle):
-		x = radius * np.cos(angle)
-		y = radius * np.sin(angle)
-		return x, y
+	x = radius * np.cos(angle)
+	y = radius * np.sin(angle)
+	return x, y

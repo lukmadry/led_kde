@@ -4,7 +4,7 @@ from numbers import Number
 
 from tools import convert_planar_to_xy
 
-class GaussianCombination:
+class GaussianMixture:
 	def __init__(self, centers, scales, weights=None, scale_is_variance=False):
 		if isinstance(centers, float):
 			centers = [centers]
@@ -65,6 +65,24 @@ class GaussianCombination:
 			samples.append(self.distributions[i].rvs())
 		return np.array(samples)
 
+# will encapsulate kde for pdf and is for rvs
+class CustomDistribution:
+	def __init__(self, init_samples, sigma=0.02):
+		self.init_samples = init_samples
+		self.sigma = sigma
+
+	def pdf(self, grid):
+		pass
+
+def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier=1):
+	thet = np.random.uniform(low=low, high=high, size=n_samples)
+	x = thet * np.sin(thet)
+	y = thet * np.cos(thet)
+	if np.abs(radius_multiplier - 1) > 1e-3:
+		x *= radius_multiplier
+		y *= radius_multiplier
+	return x, y
+
 # this does not work very well for now, it doesn't crash but the result is not what I'd expect
 # TODO check some other implementation of a spiral curve
 def generate_spiral_comb(no_pts, starting_radius=1, starting_angle=0.5, delta_angle_rad=0.3,
@@ -85,5 +103,5 @@ def generate_spiral_comb(no_pts, starting_radius=1, starting_angle=0.5, delta_an
 		radius *= radius_decay
 		angle += delta_angle_rad
 
-	combination = GaussianCombination(centers=centers, scales=[cov], scale_is_variance=False)
+	combination = GaussianMixture(centers=centers, scales=[cov], scale_is_variance=False)
 	return combination
