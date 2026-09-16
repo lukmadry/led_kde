@@ -3,18 +3,15 @@ import math
 from functools import partial
 from numbers import Number
 
-from fontTools.pens import explicitClosingLinePen
-from scipy.stats import norm, multivariate_normal
+from scipy.stats import norm
 
-from tools import convolve_continuous_grid, match_x_to_grid_and_val
+from tools import convolve_continuous_grid, match_x_to_grid_and_val, exact_gaussian_1d
 
-def compute_kde(x, observations, norm_scale, scale_is_variance=True):
+def compute_kde(x, observations, norm_scale):
 	N = len(observations)
 	val = 0
-	if scale_is_variance:
-		norm_scale = np.sqrt(norm_scale)
 	for i in range(N):
-		val += norm.pdf(x-observations[i], scale=norm_scale)
+		val += exact_gaussian_1d(x-observations[i], var=norm_scale)
 	return val / N
 
 # maybe it's possible to speed it up even more
@@ -37,6 +34,12 @@ def compute_kde_2d(x, observations, variance,
 
 	return np.asarray(estimates_on_x, float)
 
+def compute_kde_mc():
+	pass
+
+def compute_kde_2d_mc():
+	pass
+
 def compute_kde_scott(x, observations):
 	N = len(observations)
 	h = N**(-1/5.)
@@ -56,22 +59,25 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
-def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8):
-	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, scale_is_variance=True)
+def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8, filter_denom=True, denom_eps=1e-3):
+	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
 	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
 	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
-	return np.exp(k_log_ql_conv)/k_ql_conv
+	if filter_denom:
+		where_pos = np.where(k_ql_conv)[0]
+		return np.exp(k_log_ql_conv[where_pos])/k_ql_conv[where_pos], where_pos
+	else:
+		return np.exp(k_log_ql_conv)/(denom_eps+k_ql_conv)
 
 # TODO change k_pdf into explicit Gaussian computation
-def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8, scale_is_variance=True):
-	if scale_is_variance:
-		t_scale = np.sqrt(t_scale)
-	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, scale_is_variance=scale_is_variance)
+def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
+	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
 	k_log_ql_conv = convolve_continuous_grid(k_pdf, np.log(eps+q_L_approx), grid)
 	expklog = np.exp(k_log_ql_conv)
 	Z = np.sum(expklog) * (grid[1] - grid[0])
 	return expklog / Z
 
+# TODO give the possibility to pass different kernels
 def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
                        dimensions_for_grid=None):
 	if len(pts_list.shape) > 2:
@@ -102,12 +108,13 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	return expklog / Z
 
 def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
-				   k_sampler, l_sampler, verbose=True, display_every=20):
+				   k_sampler, l_sampler, verbose=True, display_every=20, alpha_filter_denom=True):
 	N = len(observations)
 
 	# precompute \alpha here
-	alpha_grid = alpha_func(grid, observations, t_scale, k_pdf)
+	alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_pdf, filter_denom=alpha_filter_denom)
 	vals = np.zeros(n_samples)
+	grid_pos = grid[where_pos]
 
 	# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
 	for i in range(n_samples):
@@ -121,7 +128,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
 			R = np.random.uniform()
 			X = observations[I] - u - w
 
-			alph_val = match_x_to_grid_and_val(X, grid, alpha_grid) # this part does not work with more than one dimension yet
+			alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid) # this part does not work with more than one dimension yet
 			if R < alph_val:
 				vals[i] = X
 				reject = False

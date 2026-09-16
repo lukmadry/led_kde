@@ -57,11 +57,8 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 			proposal_sampler=custom_proposal_sampler,
 			n_candidates=n_candidates, n_samples=n_samples)
 
-		kde_from_samples = compute_kde(
-			x=grid, 
-			observations=samples_from_current_pdf, 
-			norm_scale=kde_scale,
-			scale_is_variance=True) # produces values of kde on grid, inferred from samples_from_current_pdf
+		kde_from_samples = compute_kde(x=grid, observations=samples_from_current_pdf,
+		                               norm_scale=kde_scale)  # produces values of kde on grid, inferred from samples_from_current_pdf
 
 		all_dists.append(kde_from_samples)
 
@@ -153,7 +150,7 @@ if __name__ == '__main__':
 	# kde or led-kde arguments
 	parser.add_argument("--t_scale", default=0.02, type=float)
 	parser.add_argument("--k_scale", default=0.02, type=float)
-	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=False) # probably deprecated
 	parser.add_argument("--n_candidates", default=10000, type=int)
 	parser.add_argument("--n_samples", default=10000, type=int)
 

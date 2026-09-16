@@ -3,6 +3,9 @@ from scipy import integrate
 from scipy.stats import entropy
 
 # AI use : some (most) of these functions have been written with Gemini Flash
+def exact_gaussian_1d(x, var):
+	sddev = np.sqrt(var)
+	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
 
 # multidim version of it is coming later, so far we're not doing this
 def match_x_to_grid_and_val(x, grid, values_grid, raise_error_if_outside=False, interpolation=True):
@@ -40,7 +43,7 @@ def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	result, _ = integrate.quad(integrand, support_g[0], support_g[1])
 	return result
 
-# TODO is it the best way to do this ?
+# TODO is it the best way to do this ? it can be probably sped up
 def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
 	Parameters:
