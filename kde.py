@@ -3,7 +3,7 @@ import math
 from functools import partial
 from numbers import Number
 
-from scipy.stats import norm
+from scipy.stats import norm, multivariate_normal
 
 from tools import convolve_continuous_grid, match_x_to_grid_and_val, exact_gaussian_1d
 
@@ -14,11 +14,14 @@ def compute_kde(x, observations, norm_scale):
 		val += exact_gaussian_1d(x-observations[i], var=norm_scale)
 	return val / N
 
-# maybe it's possible to speed it up even more
+# maybe it's possible to speed it up even more by cutting off v small values
 def compute_kde_2d(x, observations, variance,
                     batch_size=1000):
 	if len(observations.shape) != 2:
 		raise ValueError("observations must be 2D")
+
+	if len(x.shape) == 3:
+		x = x.reshape(-1, 2)
 
 	norm_factor = 1.0 / (2.0 * np.pi * variance)
 	M = x.shape[0]
@@ -33,12 +36,6 @@ def compute_kde_2d(x, observations, variance,
 		estimates_on_x[idx:end_idx] = np.mean(kernel_vals, axis=1)
 
 	return np.asarray(estimates_on_x, float)
-
-def compute_kde_mc():
-	pass
-
-def compute_kde_2d_mc():
-	pass
 
 def compute_kde_scott(x, observations):
 	N = len(observations)
@@ -59,9 +56,17 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
-def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8,
+def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8,
                filter_denom=True, denom_eps=1e-3, pos_threshold=1e-6):
-	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
+	if len(observations.shape) == 2:
+		grid_orig_shape = grid.shape
+		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
+		q_L_approx = q_L_approx.reshape(grid_orig_shape[:2])
+		k_norm_factor = 1 / (2.0 * np.pi * k_scale)
+	else:
+		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
+		k_norm_factor = 1/ (2.0 * np.pi * np.sqrt(k_scale))
+	k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
 	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
 	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
 	if filter_denom:
@@ -79,6 +84,7 @@ def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	return expklog / Z
 
 # TODO give the possibility to pass different kernels
+# TODO speed up the convolution computation
 def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
                        dimensions_for_grid=None):
 	if len(pts_list.shape) > 2:
@@ -108,14 +114,30 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	Z = np.sum(expklog) * dx * dy
 	return expklog / Z
 
-def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
-				   k_sampler, l_sampler, verbose=True, display_every=20, alpha_filter_denom=True):
+def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
+				   verbose=True, display_every=20, alpha_filter_denom=True, interpolation=False):
 	N = len(observations)
+	ndim = len(observations.shape)
 
 	# precompute \alpha here
-	alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_pdf, filter_denom=alpha_filter_denom)
-	vals = np.zeros(n_samples)
-	grid_pos = grid[where_pos]
+	if alpha_filter_denom:
+		alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+		grid_pos = grid[where_pos]
+	else:
+		alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+		grid_pos = grid
+	if np.max(alpha_grid) > 1.01:
+		raise ValueError("something strange happened with alpha_grid")
+	if ndim == 1:
+		k_sampler = norm(scale=np.sqrt(k_scale)).rvs
+		l_sampler = norm(scale=np.sqrt(t_scale)).rvs
+		vals = np.zeros(n_samples)
+	elif ndim == 2:
+		k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
+		l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
+		vals = np.zeros((n_samples, 2))
+	else:
+		raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
 
 	# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
 	for i in range(n_samples):
@@ -128,7 +150,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
 			R = np.random.uniform()
 			X = observations[I] - u - w
 
-			alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid) # this part does not work with more than one dimension yet
+			alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid, interpolation=interpolation) # this part does not work with more than one dimension yet
 			if R < alph_val:
 				vals[i] = X
 				reject = False

@@ -1,19 +1,38 @@
+from numbers import Number
+
 import numpy as np
 from scipy import integrate
 from scipy.stats import entropy
 from scipy.signal import fftconvolve
 
+# TODO speed up convolutions by discarding values that are essentially zero, may need more specific variant of the code
+
 try:
 	import git
 except ImportError:
 	print("could not import git package")
-# AI use : some (most) of these functions have been written with Gemini Flash
 def exact_gaussian_1d(x, var):
 	sddev = np.sqrt(var)
 	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
 
+def exact_gaussian_2d(x, var):
+	return 1/(2.0*np.pi*var) * np.exp(-np.sum(np.square(x))/(2.0*var))
+
+def _interpret_two_dim_grid(grid):
+	if isinstance(grid, (tuple, list)) and len(grid) == 2:  # the case of two 1D grids
+		x, y = grid
+		X, Y = np.meshgrid(x, y)
+		f_grid = np.dstack([X, Y])
+	else:
+		f_grid = np.asarray(grid, float)
+		x = f_grid[0, :, 0]
+		y = f_grid[:, 0, 1]
+	return f_grid, x, y
+
+# AI use : some (most) of these functions have been written with Gemini Flash
 # multidim version of it is coming later, so far we're not doing this
-def match_x_to_grid_and_val(x, grid, values_grid, raise_error_if_outside=False, interpolation=True):
+def match_x_to_grid_and_val_1d(x, grid, values_grid,
+                            raise_error_if_outside=False, interpolation=True):
     """
     it is crucial that grid has evenly-spaced points
     """
@@ -39,7 +58,66 @@ def match_x_to_grid_and_val(x, grid, values_grid, raise_error_if_outside=False, 
         
     return values_grid[idx]
 
+def match_x_to_grid_and_val_2d(x, grid, values_grid,
+                               raise_error_if_outside=False, interpolation=True):
+	"""
+	grid :
+	"""
+	grid, x_linspace, y_linspace = _interpret_two_dim_grid(grid)
 
+	grid_stepx = x_linspace[1] - x_linspace[0]
+	grid_stepy = y_linspace[1] - y_linspace[0]
+	grid_minx = x_linspace[0]
+	grid_miny = y_linspace[0]
+	grid_maxx = x_linspace[-1]
+	grid_maxy = y_linspace[-1]
+	nx = len(x_linspace)
+	ny = len(y_linspace)
+
+	sm_x = x[0] < grid_minx
+	sm_y = x[1] < grid_miny
+	bg_x = x[0] >= grid_maxx
+	bg_y = x[1] >= grid_maxy
+
+	if raise_error_if_outside and (sm_x or sm_y or bg_x or bg_y):
+		raise ValueError("x is not allowed outside the grid")
+
+	if sm_x:
+		idx_x = 0
+	elif bg_x:
+		idx_x = nx-1
+	else:
+		idx_x = int((x[0] - grid_minx) / grid_stepx)
+	if sm_y:
+		idx_y = 0
+	elif bg_y:
+		idx_y = ny-1
+	else:
+		idx_y = int( (x[1] - grid_miny) / grid_stepy )
+
+	# a heuristic, not sure what is optimal here. Hopefully it doesn't matter all that much
+	# I guess there exist a better variant where we use the diagonal as well
+	# we should also interpolate other edges
+	if interpolation:
+		dright_x = values_grid[idx_x+1, idx_y] - x[0]
+		dright_y = values_grid[idx_x, idx_y+1] - x[1]
+		weight_x = dright_x / grid_stepx
+		weight_y = dright_y / grid_stepy
+		vx = values_grid[idx_x, idx_y] * weight_x + values_grid[idx_x+1, idx_y] * (1-weight_x)
+		vy = values_grid[idx_x, idx_y] * weight_y + values_grid[idx_x, idx_y+1] * (1-weight_y)
+		return vx /2.0 + vy/2.0
+
+	return values_grid[idx_x, idx_y]
+
+def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
+	if isinstance(x, Number):
+		return match_x_to_grid_and_val_1d(x, grid, values_grid, interpolation)
+	elif len(x) == 2:
+		return match_x_to_grid_and_val_2d(x, grid, values_grid, interpolation)
+	else:
+		raise NotImplementedError("x has to be one or two-dimensional")
+
+# remove ?
 def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	"""Computes u(x) = integral f(x - y) g(y) dy for a single scalar value x."""
 	integrand = lambda y: f_pdf(x - y) * g_pdf(y)
@@ -48,28 +126,8 @@ def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	result, _ = integrate.quad(integrand, support_g[0], support_g[1])
 	return result
 
-# TODO probably remove this
-def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
-	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
-	Parameters:
-		f_pdf: continuous callable
-		g_pdf_grid: 1D array of density values for g evaluated on y
-		x_grid: 1D array of evaluation points x
-		y_bounds: tuple (y_min, y_max) covering the support where g(y) > 0
-	"""
-	n_y = len(g_pdf_grid)
-	if y_bounds is None:
-		y_bounds = (x_grid.min(), x_grid.max())
-	y = np.linspace(y_bounds[0], y_bounds[1], n_y)
-	# 2D broadcasting: (M, 1) - (1, N) -> shape (M, N)
-	diffs = x_grid[:, None] - y
-	# print("about to compute integrand matrix")
-	# Evaluate integrand matrix: f(x - y) * g(y)
-	integrand_matrix = f_pdf(diffs) * g_pdf_grid
-	# print("integrand matrix computed")
-	# Integrate along the y axis (axis=1) using trapezoidal rule
-	return np.trapezoid(integrand_matrix, y, axis=1)
-
+# TODO to be sped up for the kernel with small support
+# TODO check if you can use scipy.ndimage instead, it's probably optimised beyond what you can obtain here
 def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# y_bounds is only there for argument compatibility with general implementation
 	N = len(x_grid)
@@ -78,50 +136,41 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	f_grid_conv = f_pdf(diffs)
 	return fftconvolve(f_grid_conv, g_pdf_grid, mode='valid') * dx
 
-def convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
-	"""
 
-	Parameters:
-		f_pdf: continuous callable
-		g_pdf_grid: mD array of density values for g evaluated on y
-		x_grid: 1) 2 arrays of shape (N, N), typically obtained through np.dstack applied to np.mgrid
-				OR 2) 2 1D grids
-
-	"""
+def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	ns_y = g_pdf_grid.shape
-
-	if isinstance(x_grid, (tuple, list)) and len(x_grid) == 2: # the case of two 1D grids
-		x1_1d, x2_1d = x_grid
-		X, Y = np.meshgrid(x1_1d, x2_1d)
-		x_grid = np.dstack([X, Y])
-	else:
-		x_grid = np.asarray(x_grid, float)
-		x1_1d = x_grid[0, :, 0]
-		x2_1d = x_grid[:, 0, 1]
+	x_grid, x1_1d, x2_1d = _interpret_two_dim_grid(x_grid)
 
 	if y_bounds is None:
-		y_grid = x_grid.copy()
 		y1_1d = x1_1d
 		y2_1d = x2_1d
 	else:
 		y1_1d = np.linspace(y_bounds[0][0], y_bounds[0][1], ns_y[0])
 		y2_1d = np.linspace(y_bounds[1][0], y_bounds[1][1], ns_y[1])
-		y_grid = np.dstack((y1_1d, y2_1d))
-	# TODO improve efficiency, takes an awful lot of memory if the grid is dense, you can use FFT
-    # you can do it exploiting translation invariance of the first one
-	diffs = x_grid[:, :, None, None] - y_grid[None, None, :, :]
-	integrand_matrix = f_pdf(diffs) * g_pdf_grid[None, None, :, :]
-	integrand_matrix = np.trapezoid(integrand_matrix, y2_1d, axis=3)
-	integrand_matrix = np.trapezoid(integrand_matrix, y1_1d, axis=2)
-	return integrand_matrix
 
+	dx1 = x1_1d[1] - x1_1d[0]
+	dx2 = x2_1d[1] - x2_1d[0]
+	dy1 = y1_1d[1] - y1_1d[0]
+	dy2 = y2_1d[1] - y2_1d[0]
+
+	d1 = np.arange(
+		-(len(y1_1d)-1)*dy1, (len(x1_1d)-1)*dx1 + 0.5*dx1, step=dx1
+	)
+	d2 = np.arange(
+		-(len(y2_1d)-1)*dy2, (len(x2_1d)-1)*dx2 + 0.5*dx2, step=dx2
+	)
+	D1, D2 = np.meshgrid(d1, d2)
+	diff_stack = np.dstack([D1, D2])
+	f_grid = f_pdf(diff_stack)
+	conv_result = fftconvolve(f_grid, g_pdf_grid, mode="valid") * dy1 * dy2
+	return conv_result
 
 def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid
 	if len(x_grid.shape) == 1:
 		return convolve_continuous_grid_1d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, y_bounds=y_bounds)
 	elif isinstance(x_grid, (tuple, list)) and len(x_grid) == 2 or len(x_grid.shape) == 3:
-		return convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid)
+		return convolve_continuous_grid_2d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid)
 	else:
 		raise NotImplementedError("convolution on more than two dimensions is not implemented and likely won't be")
 
@@ -319,5 +368,61 @@ def get_git_commit_gitpython():
 	except git.InvalidGitRepositoryError:
 		return None
 
+# statistics of distributions that we report
 def support_width(observations):
 	return np.max(observations) - np.min(observations)
+
+def nr_of_peaks(pdf_on_a_grid):
+	pass
+
+# OLD FUNCTIONS
+def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
+	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
+	Parameters:
+		f_pdf: continuous callable
+		g_pdf_grid: 1D array of density values for g evaluated on y
+		x_grid: 1D array of evaluation points x
+		y_bounds: tuple (y_min, y_max) covering the support where g(y) > 0
+	"""
+	n_y = len(g_pdf_grid)
+	if y_bounds is None:
+		y_bounds = (x_grid.min(), x_grid.max())
+	y = np.linspace(y_bounds[0], y_bounds[1], n_y)
+	# 2D broadcasting: (M, 1) - (1, N) -> shape (M, N)
+	diffs = x_grid[:, None] - y
+	# print("about to compute integrand matrix")
+	# Evaluate integrand matrix: f(x - y) * g(y)
+	integrand_matrix = f_pdf(diffs) * g_pdf_grid
+	# print("integrand matrix computed")
+	# Integrate along the y axis (axis=1) using trapezoidal rule
+	return np.trapezoid(integrand_matrix, y, axis=1)
+
+
+def convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
+	"""
+
+	Parameters:
+		f_pdf: continuous callable
+		g_pdf_grid: mD array of density values for g evaluated on y
+		x_grid: 1) 2 arrays of shape (N, N), typically obtained through np.dstack applied to np.mgrid
+				OR 2) 2 1D grids
+
+	"""
+	ns_y = g_pdf_grid.shape
+	x_grid, x1_1d, x2_1d = _interpret_two_dim_grid(x_grid)
+
+	if y_bounds is None:
+		y_grid = x_grid.copy()
+		y1_1d = x1_1d
+		y2_1d = x2_1d
+	else:
+		y1_1d = np.linspace(y_bounds[0][0], y_bounds[0][1], ns_y[0])
+		y2_1d = np.linspace(y_bounds[1][0], y_bounds[1][1], ns_y[1])
+		y_grid = np.dstack((y1_1d, y2_1d))
+	# TODO improve efficiency, takes an awful lot of memory if the grid is dense, you can use FFT
+    # you can do it exploiting translation invariance of the first one
+	diffs = x_grid[:, :, None, None] - y_grid[None, None, :, :]
+	integrand_matrix = f_pdf(diffs) * g_pdf_grid[None, None, :, :]
+	integrand_matrix = np.trapezoid(integrand_matrix, y2_1d, axis=3)
+	integrand_matrix = np.trapezoid(integrand_matrix, y1_1d, axis=2)
+	return integrand_matrix

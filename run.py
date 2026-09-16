@@ -98,10 +98,6 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 		t_scale = np.sqrt(t_scale)
 		kde_scale = np.sqrt(kde_scale)
 
-	l_sampler = norm(scale=t_scale).rvs
-	k_sampler = norm(scale=kde_scale).rvs
-	k_pdf = norm(scale=kde_scale).pdf
-
 	for i in range(n_trials):
 		
 		led_samples = sample_led_kde(
@@ -109,9 +105,6 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 						observations=obs,
 						grid=grid,
 						t_scale=t_scale,
-						l_sampler=l_sampler,
-						k_sampler=k_sampler,
-						k_pdf=k_pdf,
 						verbose=verbose
 						)
 
@@ -214,9 +207,9 @@ if __name__ == '__main__':
 
 	if args.display_and_save_an_image and args.method == 'kde':
 		# TODO add histograms on the grid
-		plt.plot(all_dist[-1], color='orange')
-		plt.plot(all_dist[0], color='blue')
-		plt.title("Blue - original distribution, orange - a final distribution")
+		plt.plot(all_dist[-1], color='blue')
+		plt.plot(all_dist[0], color='orange')
+		plt.title("Orange - original distribution, Blue - a final distribution")
 		plt.savefig(os.path.join(log_dir, "density_plots_kde.png"))
 		plt.show()
 
