@@ -1,7 +1,12 @@
 import numpy as np
 from scipy import integrate
 from scipy.stats import entropy
+from scipy.signal import fftconvolve
 
+try:
+	import git
+except ImportError:
+	print("could not import git package")
 # AI use : some (most) of these functions have been written with Gemini Flash
 def exact_gaussian_1d(x, var):
 	sddev = np.sqrt(var)
@@ -43,7 +48,7 @@ def convolve_continuous_pdf(f_pdf, g_pdf, x, support_g=(-np.inf, np.inf)):
 	result, _ = integrate.quad(integrand, support_g[0], support_g[1])
 	return result
 
-# TODO is it the best way to do this ? it can be probably sped up
+# TODO probably remove this
 def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""Evaluates continuous convolution u(x) over an array x_grid using vectorised quadrature.
 	Parameters:
@@ -64,6 +69,14 @@ def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# print("integrand matrix computed")
 	# Integrate along the y axis (axis=1) using trapezoidal rule
 	return np.trapezoid(integrand_matrix, y, axis=1)
+
+def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
+	# y_bounds is only there for argument compatibility with general implementation
+	N = len(x_grid)
+	dx = x_grid[1] - x_grid[0]
+	diffs = np.arange(-(N-1)*dx, (N-1)*dx + 0.5*dx, step=dx)
+	f_grid_conv = f_pdf(diffs)
+	return fftconvolve(f_grid_conv, g_pdf_grid, mode='valid') * dx
 
 def convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	"""
@@ -106,7 +119,7 @@ def convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid
 	if len(x_grid.shape) == 1:
-		return convolve_continuous_grid_1d(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, y_bounds=y_bounds)
+		return convolve_continuous_grid_1d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, y_bounds=y_bounds)
 	elif isinstance(x_grid, (tuple, list)) and len(x_grid) == 2 or len(x_grid.shape) == 3:
 		return convolve_continuous_grid_2dim(f_pdf, g_pdf_grid, x_grid)
 	else:
@@ -296,3 +309,15 @@ def convert_planar_to_xy(radius, angle):
 	x = radius * np.cos(angle)
 	y = radius * np.sin(angle)
 	return x, y
+
+def get_git_commit_gitpython():
+	try:
+		repo = git.Repo(search_parent_directories=True)
+		sha = repo.head.object.hexsha
+		is_dirty = repo.is_dirty()
+		return {"commit_hash": sha[:7], "is_dirty": is_dirty}
+	except git.InvalidGitRepositoryError:
+		return None
+
+def support_width(observations):
+	return np.max(observations) - np.min(observations)

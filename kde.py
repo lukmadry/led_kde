@@ -59,12 +59,13 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
-def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8, filter_denom=True, denom_eps=1e-3):
+def alpha_func(grid, observations, t_scale, k_pdf, eps=1e-8,
+               filter_denom=True, denom_eps=1e-3, pos_threshold=1e-6):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
 	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
 	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
 	if filter_denom:
-		where_pos = np.where(k_ql_conv)[0]
+		where_pos = np.where(k_ql_conv > pos_threshold)[0]
 		return np.exp(k_log_ql_conv[where_pos])/k_ql_conv[where_pos], where_pos
 	else:
 		return np.exp(k_log_ql_conv)/(denom_eps+k_ql_conv)
@@ -120,7 +121,6 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_pdf,
 	for i in range(n_samples):
 
 		reject = True
-
 		while reject:
 			I = np.random.randint(N)
 			u = l_sampler()

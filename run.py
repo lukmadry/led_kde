@@ -13,13 +13,13 @@ import matplotlib.pyplot as plt
 
 # other parts of the project
 import distributions
-from tools import sample_via_importance_resampling, kl_divergence_observations
+from tools import sample_via_importance_resampling, kl_divergence_observations, get_git_commit_gitpython, support_width
 from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott
 
-
+# TODO find a better of collecting info on experiments that you have already done
 q_dist = stats.norm(loc=0, scale=5)
 
-descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median, 'max': np.max}
+descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median, 'max': np.max, 'support_width': support_width}
 comparative_functions = {'kl_d': kl_divergence_observations}
 
 def custom_proposal_pdf(x):
@@ -84,7 +84,8 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 
 def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
-	descriptive_metrics=['mean', 'sd', 'max'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
+	descriptive_metrics=['mean', 'sd', 'support_width'], comparative_metrics=['kl_d'],
+	verbose=True, verbosity_freq=10, return_final_samples=False):
 	"""
 
 	"""
@@ -110,7 +111,8 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 						t_scale=t_scale,
 						l_sampler=l_sampler,
 						k_sampler=k_sampler,
-						k_pdf=k_pdf
+						k_pdf=k_pdf,
+						verbose=verbose
 						)
 
 		all_dist.append(led_samples)
@@ -121,7 +123,7 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 
 		statistics.append(stat)
 		if (1+i) % verbosity_freq == 0:
-			s = f"Trial nr: {1+i}. Descriptive statistics: "
+			s = f"Trial nr: {1+i}.\nDescriptive statistics: "
 			for key, val in stat.items():
 				s += f"{key}: {val:.3f} |"
 			s += "\n"
@@ -155,9 +157,11 @@ if __name__ == '__main__':
 	parser.add_argument("--n_samples", default=10000, type=int)
 
 	# arguments related to logging
-	parser.add_argument("--verbosity_freq", default=5, type=int)
+	parser.add_argument("--verbosity_freq", default=25, type=int)
 	parser.add_argument("--display_and_save_an_image", action=argparse.BooleanOptionalAction, default=True)
 	parser.add_argument("--dump_intermediary_dist", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--track_git", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--dump_gif", action=argparse.BooleanOptionalAction, default=False)
 
 	args = parser.parse_args()
 
@@ -186,7 +190,7 @@ if __name__ == '__main__':
 
 	if args.method == 'kde':
 		true_samples = true_mixture.rvs(args.n_samples)
-		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max: {np.max(true_samples)}\n")
+		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
 
 
 		run_kwargs.update(dict(starting_dist=true_mixture.pdf))
@@ -198,7 +202,7 @@ if __name__ == '__main__':
 
 	elif args.method == 'led':
 		init_obs = true_mixture.rvs(args.n_samples)
-		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max: {np.max(init_obs)}\n")
+		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
 
 		run_kwargs.update(dict(t_scale=args.t_scale, initial_observations=init_obs))
 		all_dist, stat = run_recurrent_led_kde_with_forgetting(**run_kwargs)
@@ -213,8 +217,8 @@ if __name__ == '__main__':
 		plt.plot(all_dist[-1], color='orange')
 		plt.plot(all_dist[0], color='blue')
 		plt.title("Blue - original distribution, orange - a final distribution")
+		plt.savefig(os.path.join(log_dir, "density_plots_kde.png"))
 		plt.show()
-		plt.savefig(os.path.join(log_dir, "density_plots.png"))
 
 	if args.display_and_save_an_image and args.method == 'led':
 		# we have to compute a simple KDE from observations ?
@@ -223,10 +227,13 @@ if __name__ == '__main__':
 		plt.plot(init_dist, color='orange')
 		plt.plot(final_dist, color='blue')
 		plt.title("Orange - original distribution, blue - a final distribution")
+		plt.savefig(os.path.join(log_dir, "density_plots_led.png"))
 		plt.show()
-		plt.savefig(os.path.join(log_dir, "density_plots.png"))
 
 	with open(os.path.join(log_dir, "kwargs.json"), "w") as f:
+		if args.track_git:
+			git_info = get_git_commit_gitpython()
+			args_dict.update(git_info)
 		json.dump(args_dict, f)
 
 	with open(os.path.join(log_dir, "stats.json"), "w") as f:
