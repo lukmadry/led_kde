@@ -63,10 +63,11 @@ def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8,
 		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
 		q_L_approx = q_L_approx.reshape(grid_orig_shape[:2])
 		k_norm_factor = 1 / (2.0 * np.pi * k_scale)
+		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
 	else:
 		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
-		k_norm_factor = 1/ (2.0 * np.pi * np.sqrt(k_scale))
-	k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
+		k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
+		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
 	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
 	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
 	if filter_denom:
@@ -127,7 +128,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
 		grid_pos = grid
 	if np.max(alpha_grid) > 1.01:
-		raise ValueError("something strange happened with alpha_grid")
+		raise ValueError(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}")
 	if ndim == 1:
 		k_sampler = norm(scale=np.sqrt(k_scale)).rvs
 		l_sampler = norm(scale=np.sqrt(t_scale)).rvs
