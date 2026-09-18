@@ -111,9 +111,9 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 
 def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
 	if isinstance(x, Number):
-		return match_x_to_grid_and_val_1d(x, grid, values_grid, interpolation)
+		return match_x_to_grid_and_val_1d(x, grid, values_grid, raise_error_if_outside=False, interpolation=interpolation)
 	elif len(x) == 2:
-		return match_x_to_grid_and_val_2d(x, grid, values_grid, interpolation)
+		return match_x_to_grid_and_val_2d(x, grid, values_grid, interpolation=interpolation, raise_error_if_outside=False)
 	else:
 		raise NotImplementedError("x has to be one or two-dimensional")
 
@@ -374,6 +374,11 @@ def support_width(observations):
 
 def nr_of_peaks(pdf_on_a_grid):
 	pass
+
+class StrangeAlphaException(Exception):
+	def __init__(self, message, alpha_value):
+		super().__init__(message)
+		self.alpha_value = alpha_value
 
 # OLD FUNCTIONS
 def convolve_continuous_grid_1d(f_pdf, g_pdf_grid, x_grid, y_bounds=None):

@@ -1,21 +1,59 @@
 import numpy as np
-from scipy.stats import norm, multivariate_normal
+from scipy.stats import norm, multivariate_normal, uniform
 from numbers import Number
 
 from tools import convert_planar_to_xy
 
-class GaussianMixture:
-	def __init__(self, centers, scales, weights=None, scale_is_variance=False):
+# base class that will allow us to easily add distributions together if needed
+# TODO overload + operator to add distributions
+class Distribution:
+	def __init__(self, centers, weights=None):
 		if isinstance(centers, float):
 			centers = [centers]
+
+		self.centers = np.array(centers)
+		self.N = len(self.centers)
+
+		if weights is not None:
+			if len(weights) != self.N:
+				raise ValueError("length of weights parameter should be equal to centers")
+			self.weights = weights
+		else:
+			self.weights = [1]*self.N
+
+		self.multivar = False # by default, we're dealing with one-dim objects
+
+	def pdf(self, grid):
+		weights = self.weights/np.sum(self.weights)
+		if not self.multivar:
+			final_density = np.zeros_like(grid)
+			for i in range(self.N):
+				final_density += weights[i]*self.distributions[i].pdf(grid)
+			return final_density
+		else:
+			final_density = np.zeros(grid.shape[:-1]) # maybe we can parametrize it or leave more choice, idk now
+			for i in range(self.N):
+				final_density += weights[i]*self.distributions[i].pdf(grid)
+			return final_density
+
+	def rvs(self, no_samples):
+
+		weights = self.weights/np.sum(self.weights)
+		idx = np.random.choice(a=self.N, size=no_samples, p=weights)
+		samples = []
+		for i in idx:
+			samples.append(self.distributions[i].rvs())
+		return np.array(samples)
+
+class GaussianMixture(Distribution):
+	def __init__(self, centers, scales, weights=None, scale_is_variance=False):
+		super().__init__(centers, weights)
 		if isinstance(scales, float):
 			scales = [scales]
 
-		self.centers = np.array(centers)
 		self.scales = np.array(scales)
 		self.scale_is_variance = scale_is_variance
 
-		self.N = len(self.centers)
 		if not ((len(self.scales) == self.N) or len(self.scales) == 1):
 			raise ValueError("scales argument should be either equal to length of centers or take only one element")
 
@@ -43,27 +81,25 @@ class GaussianMixture:
 			self.weights = [1]*self.N
 		self.weights = np.array(self.weights)
 
-	def pdf(self, grid):
-		weights = self.weights/np.sum(self.weights)
-		if not self.multivar:
-			final_density = np.zeros_like(grid)
-			for i in range(self.N):
-				final_density += weights[i]*self.distributions[i].pdf(grid)
-			return final_density
-		else:
-			final_density = np.zeros(grid.shape[:-1]) # maybe we can parametrize it or leave more choice, idk now
-			for i in range(self.N):
-				final_density += weights[i]*self.distributions[i].pdf(grid)
-			return final_density
+class UniformMixture(Distribution):
+	def __init__(self, centers, widths, weights=None):
+		super().__init__(centers, weights)
+		if isinstance(widths, Number):
+			widths = [widths]
 
-	def rvs(self, no_samples):
+		self.widths = np.array(widths)
 
-		weights = self.weights/np.sum(self.weights)
-		idx = np.random.choice(a=self.N, size=no_samples, p=weights)
-		samples = []
-		for i in idx:
-			samples.append(self.distributions[i].rvs())
-		return np.array(samples)
+		self.distributions = []
+
+		if not ((len(self.widths) == self.N) or len(self.widths) == 1):
+			raise ValueError("widths argument should be either equal to length of centers or take only one element")
+
+		if len(self.widths) != self.N:
+			self.widths = [self.widths[0]] * self.N
+
+		for c, w in zip(self.centers, self.widths):
+			dist = uniform(loc=c-w/2, scale=w)
+			self.distributions.append(dist)
 
 # will encapsulate kde for pdf and is for rvs
 class CustomDistribution:
@@ -74,6 +110,7 @@ class CustomDistribution:
 	def pdf(self, grid):
 		pass
 
+
 def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier=1):
 	thet = np.random.uniform(low=low, high=high, size=n_samples)
 	x = thet * np.sin(thet)
@@ -82,26 +119,3 @@ def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier=1):
 		x *= radius_multiplier
 		y *= radius_multiplier
 	return x, y
-
-# this does not work very well for now, it doesn't crash but the result is not what I'd expect
-# TODO check some other implementation of a spiral curve
-def generate_spiral_comb(no_pts, starting_radius=1, starting_angle=0.5, delta_angle_rad=0.3,
-						 radius_decay=0.99, scale=0.3, scale_is_variance=False):
-	
-	if scale_is_variance:
-		scale = np.sqrt(scale)
-	cov = np.array([[scale, 0], [0, scale]])
-
-	radius = starting_radius
-	angle = starting_angle
-
-	centers = []
-	for k in range(no_pts):
-		x, y = convert_planar_to_xy(radius, angle)
-		centers.append([x,y])
-
-		radius *= radius_decay
-		angle += delta_angle_rad
-
-	combination = GaussianMixture(centers=centers, scales=[cov], scale_is_variance=False)
-	return combination

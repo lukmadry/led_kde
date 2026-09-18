@@ -5,7 +5,8 @@ from numbers import Number
 
 from scipy.stats import norm, multivariate_normal
 
-from tools import convolve_continuous_grid, match_x_to_grid_and_val, exact_gaussian_1d
+from tools import convolve_continuous_grid, match_x_to_grid_and_val, exact_gaussian_1d, StrangeAlphaException
+
 
 def compute_kde(x, observations, norm_scale):
 	N = len(observations)
@@ -50,7 +51,7 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 		x = [x]
 	vals = []
 	for v in x:
-		vals.append(match_x_to_grid_and_val(v, grid, kde))
+		vals.append(match_x_to_grid_and_val(v, grid, kde, interpolation=True))
 	return vals
 
 def kde_sampled_pdf_func(grid, kde):
@@ -128,7 +129,8 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
 		grid_pos = grid
 	if np.max(alpha_grid) > 1.01:
-		raise ValueError(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}")
+		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
+		                            np.max(alpha_grid))
 	if ndim == 1:
 		k_sampler = norm(scale=np.sqrt(k_scale)).rvs
 		l_sampler = norm(scale=np.sqrt(t_scale)).rvs

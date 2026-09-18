@@ -66,9 +66,6 @@ def log_results(all_distributions,
 		axs_stat[ih, iw].plot(stat_unrolled[key])
 		axs_stat[ih, iw].set_title(key)
 
-	for ax in axs_stat.flat:
-		ax.label_outer()
-
 	fig_stat.savefig(os.path.join(log_dir, "statistics_plots.png"))
 
 	print("saving the picture of the final distribution")
@@ -97,7 +94,7 @@ def log_results(all_distributions,
 		ax_gif.set_ylim(y_min, y_max)
 
 		def update(frame):
-			line.set_data(_y, all_distributions[frame])
+			line.set_data(_y, all_distributions[frame]) # some internal mechanics of animation demand that we pass both x and y
 			ax_gif.set_title(f"Distribution at time {frame}")
 			return (line,)
 
@@ -115,11 +112,49 @@ def log_results(all_distributions,
 
 	print("Logs saved successfully")
 
-def find_datetime_with_this_params(params, results_filepath,
-                                   important_keys=['centers', 'scales', 'n_samples', 'n']):
+PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'n_samples', 'n', 'dist_type']
+def find_datetime_with_this_params(desired_values, results_filepath,
+                                   important_keys=PARAMETER_KEYS, full_agreement_keys=['method'],
+                                   min_agreement: float=0.5):
+	for key in important_keys:
+		assert(key in PARAMETER_KEYS)
+
+	for key in full_agreement_keys:
+		assert(key in PARAMETER_KEYS)
 
 	with open(results_filepath, "r") as f:
 		all_experiments = f.readlines()
+	all_experiments = [json.loads(exp[:-1]) for exp in all_experiments]
+
+	all_keys = set(desired_values.keys()) | set(important_keys)
+	less_important_keys = all_keys - set(full_agreement_keys)
+	less_important_keys = list(less_important_keys)
+
+	good_datetimes = []
 	for exp in all_experiments:
-		pass
+		major_disagreement = False
+		for key in full_agreement_keys:
+			if key not in exp:
+				continue
+			if exp[key] != desired_values[key]:
+				major_disagreement = True
+
+		if major_disagreement:
+			continue
+
+		agreement = 0
+		matches = []
+		for key in less_important_keys:
+			if key not in exp:
+				continue
+			if exp[key] == desired_values[key]:
+				agreement += 1
+				matches.append(key)
+
+		agreement /= len(less_important_keys)
+		if agreement > min_agreement:
+			good_datetimes.append((exp['datetime'], agreement, matches))
+
+	for dt in good_datetimes:
+		print(f"Datetime: {dt[0]}. Agreement rate: {agreement}. Matches: {matches}")
 
