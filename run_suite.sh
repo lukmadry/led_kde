@@ -1,5 +1,6 @@
 python3 run.py --centers -0.5 0.5 --scales 0.1 0.1 --method led --n 300 --t_scale 0.005 --k_scale 0.01 --n_samples 1000 --kernel gaussian
 python3 run.py --centers 0 --scales 0.35 --method led --n 1000 --t_scale 0.01 --k_scale 0.02 --n_samples 1000 --kernel gaussian
+python3 run.py --centers -0.5 0.5 --scales 0.1 0.1 --method led --n 1000 --t_scale 0.005 --k_scale 0.01 --n_samples 1000 --kernel gaussian
 python3 run.py --centers -0.5 0.5 --scales 0.1 0.1 --method led --n 300 --t_scale 0.005 --k_scale 0.01 --n_samples 1000 --kernel uniform
 python3 run.py --centers 0 --scales 0.35 --method led --n 1000 --t_scale 0.01 --k_scale 0.02 --n_samples 1000 --kernel uniform
 python3 run.py --centers 0 --scales 0.35 --method led --n 1000 --t_scale 0.005 --k_scale 0.01 --n_samples 1000 --kernel gaussian

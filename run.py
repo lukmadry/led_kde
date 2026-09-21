@@ -209,7 +209,6 @@ if __name__ == '__main__':
 		find_datetime_with_this_params(**kwargs_param_search)
 		exit()
 
-	log_dir = os.path.join("results" , datetime.datetime.now().strftime("%A_%d_%B_%Y_%I:%M%p"))
 	grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
 	
 	# TODO to be made more concise, a lot of repetition
@@ -255,9 +254,6 @@ if __name__ == '__main__':
 			alpha_filter_denom=args.alpha_filter_denom,
 			sampling_method=args.sampling_method,))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
-
-	if not os.path.exists(log_dir):
-		os.makedirs(log_dir, exist_ok=True)
 
 	args_dict['new_info'] = new_info
 	init_dist = true_mixture.pdf(grid)
