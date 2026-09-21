@@ -2,17 +2,17 @@ import numpy as np
 from scipy.stats import norm, multivariate_normal, uniform
 from numbers import Number
 
-from tools import convert_planar_to_xy
-
 # base class that will allow us to easily add distributions together if needed
 # TODO overload + operator to add distributions
 class Distribution:
 	def __init__(self, centers, weights=None):
-		if isinstance(centers, float):
+		if isinstance(centers, Number):
 			centers = [centers]
 
 		self.centers = np.array(centers)
 		self.N = len(self.centers)
+
+		self.distributions = []
 
 		if weights is not None:
 			if len(weights) != self.N:
@@ -48,7 +48,7 @@ class Distribution:
 class GaussianMixture(Distribution):
 	def __init__(self, centers, scales, weights=None, scale_is_variance=False):
 		super().__init__(centers, weights)
-		if isinstance(scales, float):
+		if isinstance(scales, Number):
 			scales = [scales]
 
 		self.scales = np.array(scales)
@@ -60,7 +60,9 @@ class GaussianMixture(Distribution):
 		if len(self.scales) == 1:
 			self.scales = [self.scales[0]] * self.N # not really optimal, TODO change
 
-		self.distributions = []
+		for s in self.scales:
+			if s < 0:
+				raise ValueError("scales parameter cannot be negative or contain negative values if a list/array")
 
 		self.multivar = False
 		if not isinstance(self.centers[0], Number):

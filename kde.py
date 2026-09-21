@@ -3,16 +3,28 @@ import math
 from functools import partial
 from numbers import Number
 
-from scipy.stats import norm, multivariate_normal
+from scipy.stats import norm, multivariate_normal, uniform
 
-from tools import convolve_continuous_grid, match_x_to_grid_and_val, exact_gaussian_1d, StrangeAlphaException
+from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_val, exact_gaussian_1d,
+                   StrangeAlphaException, sample_via_importance_resampling)
 
-
-def compute_kde(x, observations, norm_scale):
+# TODO can we exploit the grid somehow ? is numba the only way ? or just call kde from scipy
+def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	N = len(observations)
 	val = 0
-	for i in range(N):
-		val += exact_gaussian_1d(x-observations[i], var=norm_scale)
+	if isinstance(x, Number):
+		x = np.asarray([x], float)
+	if x.ndim != observations.ndim:
+		raise ValueError("x and observations should have matching dimensionality")
+	if kernel == 'gaussian':
+		# the reason why we're not calling other functions here is that they assume that x is on evenly-spaced grid
+		for i in range(N):
+			val += exact_gaussian_1d(x-observations[i], var=norm_scale)
+	elif kernel == 'uniform':
+		for i in range(N):
+			val += exact_unif_1d(x-observations[i], width=norm_scale)
+	else:
+		raise ValueError("kernel has to be either 'gaussian' or 'uniform'")
 	return val / N
 
 # maybe it's possible to speed it up even more by cutting off v small values
@@ -57,7 +69,7 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
-def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8,
+def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian',
                filter_denom=True, denom_eps=1e-3, pos_threshold=1e-6):
 	if len(observations.shape) == 2:
 		grid_orig_shape = grid.shape
@@ -66,9 +78,14 @@ def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8,
 		k_norm_factor = 1 / (2.0 * np.pi * k_scale)
 		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
 	else:
-		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
-		k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
-		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
+		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel=kernel)
+		if kernel == 'gaussian':
+			k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
+			k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
+		elif kernel == 'uniform':
+			k_pdf = partial(exact_unif_1d, width=k_scale)
+		else:
+			raise ValueError("kernel has to be either gaussian or uniform")
 	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
 	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
 	if filter_denom:
@@ -116,8 +133,10 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	Z = np.sum(expklog) * dx * dy
 	return expklog / Z
 
+# TODO method: standard does not work very well with 2D
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
-				   verbose=True, display_every=20, alpha_filter_denom=True, interpolation=False):
+				   verbose=True, display_every=20, kernel='gaussian',
+				   alpha_filter_denom=True, interpolation=False, sampling_method='standard'):
 	N = len(observations)
 	ndim = len(observations.shape)
 
@@ -131,34 +150,45 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 	if np.max(alpha_grid) > 1.01:
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 		                            np.max(alpha_grid))
-	if ndim == 1:
-		k_sampler = norm(scale=np.sqrt(k_scale)).rvs
-		l_sampler = norm(scale=np.sqrt(t_scale)).rvs
-		vals = np.zeros(n_samples)
-	elif ndim == 2:
-		k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
-		l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
-		vals = np.zeros((n_samples, 2))
+
+	if sampling_method == 'standard':
+		if ndim == 1 and kernel == 'gaussian':
+			k_sampler = norm(scale=np.sqrt(k_scale)).rvs
+			l_sampler = norm(scale=np.sqrt(t_scale)).rvs
+			vals = np.zeros(n_samples)
+		elif ndim == 1 and kernel == 'uniform':
+			k_sampler = uniform(scale=k_scale).rvs
+			l_sampler = uniform(scale=t_scale).rvs
+			vals = np.zeros(n_samples)
+		elif ndim == 2:
+			k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
+			l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
+			vals = np.zeros((n_samples, 2))
+		else:
+			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
+
+		# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
+		for i in range(n_samples):
+
+			reject = True
+			while reject:
+				I = np.random.randint(N)
+				u = l_sampler()
+				w = k_sampler()
+				R = np.random.uniform()
+				X = observations[I] - u - w
+
+				alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
+				if R < alph_val:
+					vals[i] = X
+					reject = False
+
+			if verbose and (1+i) % display_every == 0:
+				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
+	elif sampling_method == 'is':
+		alpha_func_interpolator = partial(match_x_to_grid_and_val, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
+		vals, _ = sample_via_importance_resampling(target_pdf=alpha_func_interpolator, n_samples=n_samples)
 	else:
-		raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
-
-	# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
-	for i in range(n_samples):
-
-		reject = True
-		while reject:
-			I = np.random.randint(N)
-			u = l_sampler()
-			w = k_sampler()
-			R = np.random.uniform()
-			X = observations[I] - u - w
-
-			alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid, interpolation=interpolation) # this part does not work with more than one dimension yet
-			if R < alph_val:
-				vals[i] = X
-				reject = False
-
-		if verbose and (1+i) % display_every == 0:
-			print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
-
+		raise ValueError("sampling_method must be either 'standard' or 'is'")
 	return vals
+

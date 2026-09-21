@@ -40,8 +40,7 @@ def log_results(all_distributions,
 		git_info = get_git_commit_gitpython()
 		params.update(git_info)
 	append_to_jsonl(results_filepath, params)
-
-	with open("kwargs.json", "w") as f:
+	with open(os.path.join(log_dir, "kwargs.json"), "w") as f:
 		json.dump(params, f)
 
 	print("saving statistics logs")
@@ -108,7 +107,7 @@ def log_results(all_distributions,
 	if params['save_distributions']:
 		filename = os.path.join(log_dir, "distribution_logs.hdf5")
 		with h5py.File(filename, "w") as f:
-			f.create_dataset("distribution_grids", (params['n'], params['grid_size']), data=all_distributions)
+			f.create_dataset("distribution_grids", all_distributions.shape, data=all_distributions)
 
 	print("Logs saved successfully")
 

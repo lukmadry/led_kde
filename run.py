@@ -27,7 +27,6 @@ def custom_proposal_sampler(n):
 	return q_dist.rvs(size=n)
 
 # these two can be put under some common function or a class where only the core is going to be changed
-
 def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid, 
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
 	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
@@ -84,9 +83,10 @@ def run_recurrent_kde_with_retaining():
 
 # TODO for some reason it doesn't appear to be working very well on 2D data, that is a spiral
 def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
 	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
-	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True):
+	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True,
+    sampling_method='standard'):
 	"""
 
 	"""
@@ -110,7 +110,9 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 							t_scale=t_scale,
 							k_scale=kde_scale,
 							verbose=verbose,
-							alpha_filter_denom=alpha_filter_denom
+							alpha_filter_denom=alpha_filter_denom,
+							kernel=kernel,
+							sampling_method=sampling_method,
 							)
 		except StrangeAlphaException as err:
 			additional_info = ["strange_alpha", err.alpha_value]
@@ -146,7 +148,6 @@ def run_recurrent_led_with_data_retaining():
 	pass
 
 
-# TODO will have to be extended to treat other distributions than gaussian mixtures
 if __name__ == '__main__':
 	# TODO add help arguments
 	parser = argparse.ArgumentParser()
@@ -175,6 +176,8 @@ if __name__ == '__main__':
 	parser.add_argument("--weights", nargs='+', default=[1,1], type=float)
 
 	# kde or led-kde arguments
+	parser.add_argument("--kernel", default='gaussian', choices=['gaussian', 'uniform'])
+	parser.add_argument("--sampling_method", default='standard', choices=['standard', 'is'])
 	parser.add_argument("--t_scale", default=0.02, type=float)
 	parser.add_argument("--k_scale", default=0.04, type=float)
 	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=False) # probably deprecated
@@ -218,7 +221,8 @@ if __name__ == '__main__':
 		verbosity_freq=args.verbosity_freq,
 		return_final_samples=True,
 		n_candidates=args.n_candidates,
-		n_samples=args.n_samples)
+		n_samples=args.n_samples,
+		kernel=args.kernel)
 
 	if args.dist_type == 'gaussian':
 		true_mixture = distributions.GaussianMixture(
@@ -241,7 +245,6 @@ if __name__ == '__main__':
 		run_kwargs.update(dict(starting_dist=true_mixture.pdf))
 		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
 
-
 	elif args.method == 'led':
 		init_obs = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
@@ -249,7 +252,8 @@ if __name__ == '__main__':
 		run_kwargs.update(dict(
 			t_scale=args.t_scale,
 			initial_observations=init_obs,
-			alpha_filter_denom=args.alpha_filter_denom))
+			alpha_filter_denom=args.alpha_filter_denom,
+			sampling_method=args.sampling_method,))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
 
 	if not os.path.exists(log_dir):
