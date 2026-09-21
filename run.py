@@ -173,7 +173,7 @@ if __name__ == '__main__':
 	parser.add_argument("--centers", nargs='+', default=[-1, 1], type=float)
 	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35], type=float)
 	parser.add_argument("--widths", nargs='+', default=[0.5, 0.5], type=float)
-	parser.add_argument("--weights", nargs='+', default=[1,1], type=float)
+	parser.add_argument("--weights", nargs='+', type=float)
 
 	# kde or led-kde arguments
 	parser.add_argument("--kernel", default='gaussian', choices=['gaussian', 'uniform'])

@@ -13,10 +13,9 @@ class Distribution:
 		self.N = len(self.centers)
 
 		self.distributions = []
-
 		if weights is not None:
 			if len(weights) != self.N:
-				raise ValueError("length of weights parameter should be equal to centers")
+				raise ValueError(f"length of weights parameter should be equal to centers. Centers are: {self.centers}, weights: {self.weights}")
 			self.weights = weights
 		else:
 			self.weights = [1]*self.N
