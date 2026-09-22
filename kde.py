@@ -8,25 +8,6 @@ from scipy.stats import norm, multivariate_normal, uniform
 from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_val, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff)
 
-# TODO to be removed probably
-def compute_kde_basic(x, observations, norm_scale, kernel='gaussian'):
-	N = len(observations)
-	val = 0
-	if isinstance(x, Number):
-		x = np.asarray([x], float)
-	if x.ndim != observations.ndim:
-		raise ValueError("x and observations should have matching dimensionality")
-	if kernel == 'gaussian':
-		# the reason why we're not calling other functions here is that they assume that x is on evenly-spaced grid
-		for i in range(N):
-			val += exact_gaussian_1d(x-observations[i], var=norm_scale)
-	elif kernel == 'uniform':
-		for i in range(N):
-			val += exact_unif_1d(x-observations[i], width=norm_scale)
-	else:
-		raise ValueError("kernel has to be either 'gaussian' or 'uniform'")
-	return val / N
-
 def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	N = len(observations)
 	val = 0
