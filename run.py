@@ -18,7 +18,7 @@ q_dist = stats.norm(loc=0, scale=5)
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
 comparative_functions = {'kl_d': kl_divergence_observations}
-# I'm not really using this given that it appears to change shape a lot for anything apart from a simple Gaussian
+# I'm not really using comparative metrics given that it appears to change shape a lot for anything apart from a simple Gaussian
 
 def custom_proposal_pdf(x):
 	return q_dist.pdf(x)
@@ -115,7 +115,6 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
 		all_pdfs.append(local_led_pdf)
 
-		# TODO find a way to put the following in a single function to remove duplication
 		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
 		statistics.append(stat)
 		obs = led_samples
@@ -144,6 +143,7 @@ def run_recurrent_led_with_data_retaining(n_trials, initial_observations, grid, 
 		t_scale = np.sqrt(t_scale)
 		kde_scale = np.sqrt(kde_scale)
 
+	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 
 		led_samples = sample_led_kde(
@@ -166,6 +166,12 @@ def run_recurrent_led_with_data_retaining(n_trials, initial_observations, grid, 
 		                        verbosity_freq)
 		statistics.append(stat)
 
+	t1 = datetime.datetime.now()
+	if additional_info is None:
+		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
+	else:
+		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
+
 	return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 
 if __name__ == '__main__':
@@ -180,6 +186,10 @@ if __name__ == '__main__':
 	# some technical arguments
 	parser.add_argument("--grid_size", default=500, type=int)
 	parser.add_argument("--alpha_filter_denom", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
+	                    help="it seems to be important to keep it at True, otherwise there is a bias towards negative values")
+	parser.add_argument("--with_fft_cutoff", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--seed", type=int)
 
 	# only relevant for retrieving past experiments
 	parser.add_argument("--search", action=argparse.BooleanOptionalAction, default=False)
@@ -203,8 +213,6 @@ if __name__ == '__main__':
 	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=False) # probably deprecated
 	parser.add_argument("--n_candidates", default=10000, type=int)
 	parser.add_argument("--n_samples", default=10000, type=int)
-	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
-	                    help="it seems to be important to keep it at True, otherwise there is a bias towards negative values")
 	parser.add_argument("--n_init_samples", default=1000, type=int, help="number of initial samples, only relevant for data retaining scheme")
 
 	# arguments related to logging
@@ -260,6 +268,7 @@ if __name__ == '__main__':
 			weights=args.weights,
 		)
 
+	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}")
 	if args.method == 'kde':
 		true_samples = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")

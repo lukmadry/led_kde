@@ -8,6 +8,10 @@ from scipy.stats import norm, multivariate_normal, uniform
 from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_val, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff)
 
+# if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
+# I guess that scipy does a lot of other stuff under the hood
+# however it cuts the function a little bit and I haven't tested systematically yet if it makes the difference, so keeping it as a separate option
+# TODO move some of the numerical tests into a separate file so that one can always re-test them if needed
 def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	N = len(observations)
 	val = 0
@@ -17,6 +21,9 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 		raise ValueError("x and observations should have matching dimensionality")
 	if kernel == 'gaussian':
 		# the reason why we're not calling other functions here is that they assume that x is on evenly-spaced grid
+		for i in range(N):
+			val += exact_gaussian_1d(x-observations[i], var=norm_scale)
+	elif kernel == 'gaussian_cutoff':
 		for i in range(N):
 			val += exact_gaussian_1d_cutoff(x-observations[i], var=norm_scale)
 	elif kernel == 'uniform':
@@ -78,7 +85,11 @@ def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian'
 		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
 	else:
 		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel=kernel)
-		if kernel == 'gaussian':
+		if kernel == 'gaussian_cutoff':
+			k_pdf = partial(exact_gaussian_1d_cutoff, var=k_scale)
+			# k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
+			# k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
+		elif kernel == 'gaussian':
 			k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
 			k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
 		elif kernel == 'uniform':
@@ -135,20 +146,23 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 # TODO method: standard does not work very well with 2D
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose=True, display_every=20, kernel='gaussian',
-				   alpha_filter_denom=True, interpolation=True, sampling_method='standard', debug=True):
+				   alpha_filter_denom=True, interpolation=True,
+				   sampling_method='standard', debug=True, alpha_grid=None):
 	N = len(observations)
 	ndim = len(observations.shape)
-
-	# precompute \alpha here
-	if alpha_filter_denom:
-		alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
-		grid_pos = grid[where_pos]
+	# precompute \alpha here (maybe you can factor it out, it was separated for testing and profiling)
+	if alpha_grid is None:
+		if alpha_filter_denom:
+			alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+			grid_pos = grid[where_pos]
+		else:
+			alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+			grid_pos = grid
 	else:
-		alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
 		grid_pos = grid
 	if np.max(alpha_grid) > 1.01:
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
-		                            np.max(alpha_grid))
+									np.max(alpha_grid))
 
 	if sampling_method == 'standard':
 		if ndim == 1 and kernel == 'gaussian':
@@ -166,19 +180,6 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		else:
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
 
-		# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
-		# TODO remove once debugged
-		# if debug:
-		# 	samples_left_median = 0
-		# 	samples_left_mean = 0
-		# 	presamples_left_median = 0
-		# 	presamples_left_mean = 0
-		# 	finally_sampled_is_smaller = 0
-		# 	had_to_reject = 0
-		# 	med = np.median(observations)
-		# 	mean = np.mean(observations)
-		# 	nr_rejections = np.zeros(n_samples)
-		# 	alph_vals = []
 		for i in range(n_samples):
 
 			reject = True
@@ -204,25 +205,9 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				if R < alph_val:
 					vals[i] = X
 					reject = False
-			# if debug:
-			# 	nr_rejections[i] = r
-			# 	if local_had_to_reject:
-			# 		had_to_reject += 1
-			# 		if vals[i] < first_val_sampled:
-			# 			finally_sampled_is_smaller += 1
 			if verbose and (1+i) % display_every == 0:
 				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
 
-			# if debug:
-			# 	if vals[i] < med:
-			# 		samples_left_median += 1
-			# 	if vals[i] < mean:
-			# 		samples_left_mean += 1
-			# 	if observations[I] < mean:
-			# 		presamples_left_mean += 1
-			# 	if observations[I] < med:
-			# 		presamples_left_median += 1
-			# 	alph_vals.append((alph_val, u, w))
 
 		# if debug:
 		# 	print(f"Samples left of median: {samples_left_median} out of {n_samples}")

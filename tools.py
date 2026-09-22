@@ -4,6 +4,7 @@ import numpy as np
 from scipy import integrate
 from scipy.stats import entropy, norm
 from scipy.signal import fftconvolve
+from scipy.special import erf
 
 # TODO speed up convolutions by discarding values that are essentially zero, may need more specific variant of the code
 
@@ -16,6 +17,7 @@ def exact_gaussian_1d(x, var):
 	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
 
 def exact_gaussian_1d_cutoff(x, var):
+	# TODO add normalisation, right now it's not a probability distribution
 	far_bool = np.abs(x) > 50*var
 	sddev = np.sqrt(2.0*np.pi*var)
 	close_vals = 1/sddev * np.exp(-np.square(x[~far_bool])/(2.0*var))
@@ -147,7 +149,6 @@ def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
 # TODO to be sped up for the kernel with small support
 # TODO check if you can use scipy.ndimage instead, it's probably optimised beyond what you can obtain here
 def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
-	# y_bounds is only there for argument compatibility with general implementation
 	N = len(x_grid)
 	dx = x_grid[1] - x_grid[0]
 	if radius is None:
@@ -155,7 +156,14 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
 	else:
 		diffs = np.arange(-radius, radius, step=dx)
 	f_grid_conv = f_pdf(diffs)
-	return fftconvolve(f_grid_conv, g_pdf_grid, mode='valid') * dx
+	padding_size = len(f_grid_conv) // 2
+	padded_base = np.pad(
+		g_pdf_grid,
+		(padding_size, padding_size),
+		mode='constant',
+		constant_values=(g_pdf_grid[0], g_pdf_grid[-1]),
+	)
+	return fftconvolve(padded_base, f_grid_conv, mode='valid') * dx
 
 
 def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
