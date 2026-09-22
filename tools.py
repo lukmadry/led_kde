@@ -15,6 +15,14 @@ def exact_gaussian_1d(x, var):
 	sddev = np.sqrt(var)
 	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
 
+def exact_gaussian_1d_cutoff(x, var):
+	far_bool = np.abs(x) > 50*var
+	sddev = np.sqrt(2.0*np.pi*var)
+	close_vals = 1/sddev * np.exp(-np.square(x[~far_bool])/(2.0*var))
+	u = np.zeros_like(x)
+	u[~far_bool] = close_vals
+	return u
+
 def exact_gaussian_2d(x, var):
 	return 1/(2.0*np.pi*var) * np.exp(-np.sum(np.square(x))/(2.0*var))
 
@@ -31,6 +39,25 @@ def _interpret_two_dim_grid(grid):
 		x = f_grid[0, :, 0]
 		y = f_grid[:, 0, 1]
 	return f_grid, x, y
+
+def print_statistics(local_pdf, local_samples, metrics_dict, func_dict, i, verbosity_freq):
+	# TODO find a way to put the following in a single function to remove duplication
+	stat = {}
+	for s in metrics_dict:
+		if s.endswith("___density"):
+			new_name = s.split("___")[0] + " of density"
+			stat[new_name] = func_dict[s](local_pdf)
+		else:
+			stat[s] = func_dict[s](local_samples)
+
+	if (1 + i) % verbosity_freq == 0:
+		s = f"Trial nr: {1 + i}.\nDescriptive statistics: "
+		for key, val in stat.items():
+			s += f"{key}: {val:.3f} |"
+		s += "\n"
+		print(s)
+
+	return stat
 
 # AI use : some (most) of these functions have been written with Gemini Flash
 def match_x_to_grid_and_val_1d(x, grid, values_grid,

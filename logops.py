@@ -18,7 +18,7 @@ def log_results(all_distributions,
                 results_dirpath,
                 results_filepath,
                 params,
-                init_dist, y_bounds=None, simulation_step=100):
+                init_dist, y_bounds=None, simulation_step=100, grid=None):
 	"""
 
 	Saves the results in the following format:
@@ -69,8 +69,14 @@ def log_results(all_distributions,
 
 	print("saving the picture of the final distribution")
 	fig_final, ax_final = plt.subplots()
-	ax_final.plot(init_dist, color='orange')
-	ax_final.plot(all_distributions[-1], color='blue')
+	if grid is not None:
+		ax_final.plot(grid, init_dist, color='orange')
+	else:
+		ax_final.plot(init_dist, color='orange')
+	if grid is not None:
+		ax_final.plot(grid, all_distributions[-1], color='blue')
+	else:
+		ax_final.plot(all_distributions[-1], color='blue')
 	fig_final.suptitle("Orange - original distribution, blue - a final distribution")
 	fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
 

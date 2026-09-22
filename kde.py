@@ -6,10 +6,10 @@ from numbers import Number
 from scipy.stats import norm, multivariate_normal, uniform
 
 from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_val, exact_gaussian_1d,
-                   StrangeAlphaException, sample_via_importance_resampling)
+                   StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff)
 
-# TODO can we exploit the grid somehow ? is numba the only way ? or just call kde from scipy
-def compute_kde(x, observations, norm_scale, kernel='gaussian'):
+# TODO to be removed probably
+def compute_kde_basic(x, observations, norm_scale, kernel='gaussian'):
 	N = len(observations)
 	val = 0
 	if isinstance(x, Number):
@@ -20,6 +20,24 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 		# the reason why we're not calling other functions here is that they assume that x is on evenly-spaced grid
 		for i in range(N):
 			val += exact_gaussian_1d(x-observations[i], var=norm_scale)
+	elif kernel == 'uniform':
+		for i in range(N):
+			val += exact_unif_1d(x-observations[i], width=norm_scale)
+	else:
+		raise ValueError("kernel has to be either 'gaussian' or 'uniform'")
+	return val / N
+
+def compute_kde(x, observations, norm_scale, kernel='gaussian'):
+	N = len(observations)
+	val = 0
+	if isinstance(x, Number):
+		x = np.asarray([x], float)
+	if x.ndim != observations.ndim:
+		raise ValueError("x and observations should have matching dimensionality")
+	if kernel == 'gaussian':
+		# the reason why we're not calling other functions here is that they assume that x is on evenly-spaced grid
+		for i in range(N):
+			val += exact_gaussian_1d_cutoff(x-observations[i], var=norm_scale)
 	elif kernel == 'uniform':
 		for i in range(N):
 			val += exact_unif_1d(x-observations[i], width=norm_scale)
@@ -136,7 +154,7 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 # TODO method: standard does not work very well with 2D
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose=True, display_every=20, kernel='gaussian',
-				   alpha_filter_denom=True, interpolation=False, sampling_method='standard'):
+				   alpha_filter_denom=True, interpolation=True, sampling_method='standard', debug=True):
 	N = len(observations)
 	ndim = len(observations.shape)
 
@@ -153,8 +171,8 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 
 	if sampling_method == 'standard':
 		if ndim == 1 and kernel == 'gaussian':
-			k_sampler = norm(scale=np.sqrt(k_scale)).rvs
-			l_sampler = norm(scale=np.sqrt(t_scale)).rvs
+			k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
+			l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
 			vals = np.zeros(n_samples)
 		elif ndim == 1 and kernel == 'uniform':
 			k_sampler = uniform(scale=k_scale).rvs
@@ -168,9 +186,25 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
 
 		# this can be presumably parallelized, although not by that much on my computer without GPU, some far away TODO would be maybe to try and write a kernel for this
+		# TODO remove once debugged
+		# if debug:
+		# 	samples_left_median = 0
+		# 	samples_left_mean = 0
+		# 	presamples_left_median = 0
+		# 	presamples_left_mean = 0
+		# 	finally_sampled_is_smaller = 0
+		# 	had_to_reject = 0
+		# 	med = np.median(observations)
+		# 	mean = np.mean(observations)
+		# 	nr_rejections = np.zeros(n_samples)
+		# 	alph_vals = []
 		for i in range(n_samples):
 
 			reject = True
+			# if debug:
+			# 	r = 0
+			# 	first_val_sampled = 0
+			# 	local_had_to_reject = False
 			while reject:
 				I = np.random.randint(N)
 				u = l_sampler()
@@ -178,17 +212,51 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				R = np.random.uniform()
 				X = observations[I] - u - w
 
+				# if debug:
+				# 	if  r == 0:
+				# 		first_val_sampled = X
+				# 	if  r > 1:
+				# 		local_had_to_reject = True
+				# 	r += 1
+
 				alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
 				if R < alph_val:
 					vals[i] = X
 					reject = False
-
+			# if debug:
+			# 	nr_rejections[i] = r
+			# 	if local_had_to_reject:
+			# 		had_to_reject += 1
+			# 		if vals[i] < first_val_sampled:
+			# 			finally_sampled_is_smaller += 1
 			if verbose and (1+i) % display_every == 0:
 				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
+
+			# if debug:
+			# 	if vals[i] < med:
+			# 		samples_left_median += 1
+			# 	if vals[i] < mean:
+			# 		samples_left_mean += 1
+			# 	if observations[I] < mean:
+			# 		presamples_left_mean += 1
+			# 	if observations[I] < med:
+			# 		presamples_left_median += 1
+			# 	alph_vals.append((alph_val, u, w))
+
+		# if debug:
+		# 	print(f"Samples left of median: {samples_left_median} out of {n_samples}")
+		# 	print(f"Samples left of mean: {samples_left_mean} out of {n_samples}")
+		# 	print(f"Presamples left of median: {presamples_left_median} out of {n_samples}")
+		# 	print(f"Presamples left of mean: {presamples_left_mean} out of {n_samples}")
+		#
+		# 	print(f"Had to reject: {had_to_reject} out of {n_samples}")
+		# 	print(f"After rejections {finally_sampled_is_smaller} out of {had_to_reject} have been smaller than initial value")
 	elif sampling_method == 'is':
 		alpha_func_interpolator = partial(match_x_to_grid_and_val, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
 		vals, _ = sample_via_importance_resampling(target_pdf=alpha_func_interpolator, n_samples=n_samples)
 	else:
 		raise ValueError("sampling_method must be either 'standard' or 'is'")
+	# if debug:
+	# 	return vals, alph_vals, nr_rejections
 	return vals
 

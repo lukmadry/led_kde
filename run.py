@@ -9,7 +9,7 @@ import os
 
 # other parts of the project
 import distributions
-from tools import sample_via_importance_resampling, kl_divergence_observations, support_width, StrangeAlphaException
+from tools import sample_via_importance_resampling, kl_divergence_observations, support_width, StrangeAlphaException, print_statistics
 from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 
@@ -60,37 +60,26 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 		all_dists.append(kde_from_samples)
 
 		current_dist = kde_sampled_pdf_func(grid=grid, kde=kde_from_samples) # a function that will be put in the sampler in the next round
-
-		stat = {}
-		stat['is_ess'] = ess
-		for s in descriptive_metrics:
-			stat[s] = descriptive_functions[s](kde_from_samples)
-
+		stat = print_statistics(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
+		                        verbosity_freq)
 		statistics.append(stat)
-		if (1+i) % verbosity_freq == 0:
-			s = f"Trial nr: {1+i}. Descriptive statistics: "
-			for key, val in stat.items():
-				s += f"{key}: {val:.3f} |"
-			s += "\n"
-			print(s)
 
 	if return_final_samples:
 		return (samples_from_current_pdf, np.asarray(all_dists, dtype=float), statistics)
 	return np.asarray(all_dists, dtype=float), statistics
 
-def run_recurrent_kde_with_retaining():
-	pass
+def run_recurrent_kde_with_retaining(**kwargs):
+	raise NotImplementedError("KDE with retaining not implemented yet")
 
 # TODO for some reason it doesn't appear to be working very well on 2D data, that is a spiral
 def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
 	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
 	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True,
-    sampling_method='standard'):
+    sampling_method='standard', interpolation=True):
 	"""
 
 	"""
-
 	all_pdfs = []
 	statistics = []
 	additional_info = None
@@ -100,6 +89,7 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 		t_scale = np.sqrt(t_scale)
 		kde_scale = np.sqrt(kde_scale)
 
+	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 
 		try:
@@ -113,40 +103,70 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 							alpha_filter_denom=alpha_filter_denom,
 							kernel=kernel,
 							sampling_method=sampling_method,
+							debug=False,
+							interpolation=interpolation,
 							)
 		except StrangeAlphaException as err:
-			additional_info = ["strange_alpha", err.alpha_value]
+			if additional_info is None:
+				additional_info = {"strange_alpha": err.alpha_value}
 			if i > 100:
 				print("we will proceed with saving the results anyway")
 			break
 		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
 		all_pdfs.append(local_led_pdf)
-		stat = {}
+
 		# TODO find a way to put the following in a single function to remove duplication
-		for s in descriptive_metrics:
-			if s.endswith("___density"):
-				new_name = s.split("___")[0] + " of density"
-				stat[new_name] = descriptive_functions[s](local_led_pdf)
-			else:
-				stat[s] = descriptive_functions[s](led_samples)
-
+		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
 		statistics.append(stat)
-		if (1+i) % verbosity_freq == 0:
-			s = f"Trial nr: {1+i}.\nDescriptive statistics: "
-			for key, val in stat.items():
-				s += f"{key}: {val:.3f} |"
-			s += "\n"
-			print(s)
-
 		obs = led_samples
 
+	t1 = datetime.datetime.now()
+	if additional_info is None:
+		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
+	else:
+		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
 	if return_final_samples:
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
 
-def run_recurrent_led_with_data_retaining():
-	pass
+def run_recurrent_led_with_data_retaining(n_trials, initial_observations, grid, t_scale=0.02,
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
+	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
+	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True,
+    sampling_method='standard'):
 
+	all_pdfs = []
+	statistics = []
+	additional_info = None
+
+	all_obs = initial_observations
+	if scale_is_variance:
+		t_scale = np.sqrt(t_scale)
+		kde_scale = np.sqrt(kde_scale)
+
+	for i in range(n_trials):
+
+		led_samples = sample_led_kde(
+			n_samples=n_samples,
+			observations=all_obs,
+			grid=grid,
+			t_scale=t_scale,
+			k_scale=kde_scale,
+			verbose=verbose,
+			alpha_filter_denom=alpha_filter_denom,
+			kernel=kernel,
+			sampling_method=sampling_method,
+			debug=False,
+		)
+
+		all_obs = np.concatenate([all_obs, led_samples])
+		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
+		all_pdfs.append(local_led_pdf)
+		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
+		                        verbosity_freq)
+		statistics.append(stat)
+
+	return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 
 if __name__ == '__main__':
 	# TODO add help arguments
@@ -155,14 +175,14 @@ if __name__ == '__main__':
 	parser.add_argument("--dim", default=1, type=int)
 	parser.add_argument("--lower_bd", default=-5, type=float) # possibly multiple values if dim > 1, but to be changed later on
 	parser.add_argument("--upper_bd", default=5, type=float)
-	parser.add_argument("--method", choices=['led', 'kde'], type=str, default='kde')
+	parser.add_argument("--method", choices=['led', 'kde', 'led_retain'], type=str, default='led')
 
 	# some technical arguments
 	parser.add_argument("--grid_size", default=500, type=int)
 	parser.add_argument("--alpha_filter_denom", action=argparse.BooleanOptionalAction, default=True)
 
 	# only relevant for retrieving past experiments
-	parser.add_argument("--give_matching_datetimes", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--search", action=argparse.BooleanOptionalAction, default=False)
 	parser.add_argument("--keys", nargs='+', help="give a list of keys that will be taken into account "
 	                                              "when performing a search. By default PARAMETER_KEYS in logops.py")
 	parser.add_argument("--full_agreement_keys", nargs='+', help="give a list of keys that have to match perfectly"
@@ -183,6 +203,9 @@ if __name__ == '__main__':
 	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=False) # probably deprecated
 	parser.add_argument("--n_candidates", default=10000, type=int)
 	parser.add_argument("--n_samples", default=10000, type=int)
+	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
+	                    help="it seems to be important to keep it at True, otherwise there is a bias towards negative values")
+	parser.add_argument("--n_init_samples", default=1000, type=int, help="number of initial samples, only relevant for data retaining scheme")
 
 	# arguments related to logging
 	parser.add_argument("--verbosity_freq", default=25, type=int)
@@ -195,7 +218,7 @@ if __name__ == '__main__':
 	args = parser.parse_args()
 	args_dict = vars(args)
 	res_filepath = os.path.join("results", "record.jsonl")
-	if args.give_matching_datetimes:
+	if args.search:
 		smaller_dict = {key: value for key, value in args_dict.items() if key in PARAMETER_KEYS}
 		kwargs_param_search = dict(desired_values=smaller_dict, results_filepath=res_filepath)
 		if args.keys is not None:
@@ -252,10 +275,22 @@ if __name__ == '__main__':
 			t_scale=args.t_scale,
 			initial_observations=init_obs,
 			alpha_filter_denom=args.alpha_filter_denom,
-			sampling_method=args.sampling_method,))
+			sampling_method=args.sampling_method,
+			interpolation=args.with_interpolation))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
 
+	elif args.method == 'led_retain':
+		init_obs = true_mixture.rvs(args.n_init_samples)
+
+		run_kwargs.update(dict(
+			t_scale=args.t_scale,
+			initial_observations=init_obs,
+			alpha_filter_denom=args.alpha_filter_denom,
+			sampling_method=args.sampling_method,))
+		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining(**run_kwargs)
+
 	args_dict['new_info'] = new_info
+	print(f"Time passed: {new_info['time_in_seconds']:.4f} seconds")
 	init_dist = true_mixture.pdf(grid)
 	log_results(all_distributions=all_dist,
 	            statistics=stat,
@@ -263,5 +298,4 @@ if __name__ == '__main__':
 	            results_filepath=res_filepath,
 	            params=args_dict,
 	            init_dist=init_dist,
-	            simulation_step=args.gif_simulation_step)
-
+	            simulation_step=args.gif_simulation_step, grid=grid)
