@@ -5,12 +5,13 @@ from numbers import Number
 # base class that will allow us to easily add distributions together if needed
 # TODO overload + operator to add distributions
 class Distribution:
-	def __init__(self, centers, weights=None):
+	def __init__(self, centers, weights=None, random_state=None):
 		if isinstance(centers, Number):
 			centers = [centers]
 
 		self.centers = np.array(centers)
 		self.N = len(self.centers)
+		self.seed = random_state
 
 		self.distributions = []
 		if weights is not None:
@@ -46,15 +47,15 @@ class Distribution:
 		samples = []
 		if not self.multivar:
 			for i in idx:
-				samples.append(self.distributions[i].rvs())
+				samples.append(self.distributions[i].rvs(random_state=self.seed))
 		else:
 			for i in idx:
-				samples.append(self.distributions[i].rvs().flatten())
+				samples.append(self.distributions[i].rvs(random_state=self.seed).flatten())
 		return np.array(samples)
 
 class GaussianMixture(Distribution):
-	def __init__(self, centers, scales, weights=None, scale_is_variance=False):
-		super().__init__(centers, weights)
+	def __init__(self, centers, scales, weights=None, scale_is_variance=False, random_state=None):
+		super().__init__(centers, weights, random_state=random_state)
 		if isinstance(scales, Number):
 			scales = [scales]
 
@@ -130,26 +131,26 @@ class UniformBox:
 		pdf = pdf_x * pdf_y # since boxes are independent uniforms
 		return pdf.reshape(grid.shape[:-1])
 
-	def rvs(self, no_samples=None):
+	def rvs(self, no_samples=None, random_state=None):
 		"""
 		no_samples : int
 		"""
 		if no_samples is None:
 			no_samples = 1
-		samples_x = self.dist_x.rvs(no_samples)
-		samples_y = self.dist_y.rvs(no_samples)
+		samples_x = self.dist_x.rvs(no_samples, random_state=random_state)
+		samples_y = self.dist_y.rvs(no_samples, random_state=random_state)
 		return np.stack([samples_x, samples_y], axis=1)
 
 class UniformBoxMixture(Distribution):
-	def __init__(self, centers, shapes, weights=None):
-		super().__init__(centers, weights)
+	def __init__(self, centers, shapes, weights=None, random_state=None):
+		super().__init__(centers, weights, random_state=random_state)
 
 		self.shapes = np.array(shapes)
 		if self.centers.ndim != self.shapes.ndim and self.centers.shape[0] != self.shapes.shape[0]:
 			raise ValueError("centers and shapes should have the same dimensions")
 
 		for (cx, cy), (wx, wy) in zip(self.centers, self.shapes):
-			self.distributions.append(UniformBox(corner=(cx, cy), shapes=(wx, wy)))
+			self.distributions.append(UniformBox(corner=(cx-wx/2, cy-wy/2), shapes=(wx, wy)))
 
 		self.multivar = True
 

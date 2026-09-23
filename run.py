@@ -11,11 +11,14 @@ import os
 import distributions
 from tools import (sample_via_importance_resampling, kl_divergence_observations, support_width,
                    StrangeAlphaException, print_statistics, run_dimension_consistency_check)
-from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott
+from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott, compute_kde_2d
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 
 q_dist = stats.norm(loc=0, scale=5)
 
+# TODO: separate 1d and 2d
+
+# they are not very well adapted to ndim > 1, to be changed
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
 comparative_functions = {'kl_d': kl_divergence_observations}
@@ -72,12 +75,13 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 def run_recurrent_kde_with_retaining(**kwargs):
 	raise NotImplementedError("KDE with retaining not implemented yet")
 
-# TODO instead of doing so many checks for dimensions you should rather write two different variants, one for 1d and one for 2d
+# TODO instead of doing so many checks for dimensions inside you should rather write two different variants, one for 1d and one for 2d
 def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
 	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
-	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True,
-    sampling_method='standard', interpolation=True):
+	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=False, ndim=1,
+    sampling_method='standard', interpolation=True, alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
+                                          debug=False):
 	"""
 
 	grid:
@@ -93,7 +97,7 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 
 	t0 = datetime.datetime.now()
 	# TODO move precomputing kernel for \alpha here
-
+	print("about to starting sampling")
 	for i in range(n_trials):
 
 		try:
@@ -107,16 +111,23 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 							alpha_filter_denom=alpha_filter_denom,
 							kernel=kernel,
 							sampling_method=sampling_method,
-							debug=False,
+							debug=debug,
 							interpolation=interpolation,
+							alpha_denom_eps=alpha_denom_eps,
+							alpha_log_eps=alpha_log_eps,
 							)
 		except StrangeAlphaException as err:
+			print(f"Iteration {i}")
 			if additional_info is None:
 				additional_info = {"strange_alpha": err.alpha_value}
 			if i > 100:
 				print("we will proceed with saving the results anyway")
 			break
-		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
+		if ndim == 1:
+			local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
+		elif ndim == 2:
+			bandwidth = 1/len(led_samples)**(1/6)
+			local_led_pdf = compute_kde_2d(x=grid, observations=led_samples, variance=bandwidth, keep_shape=True)
 		all_pdfs.append(local_led_pdf)
 
 		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
@@ -192,9 +203,11 @@ if __name__ == '__main__':
 	# some technical arguments
 	parser.add_argument("--grid_size", default=500, type=int, help="size of a grid on which we will sample distribution")
 	parser.add_argument("--alpha_filter_denom",
-						action=argparse.BooleanOptionalAction, default=True,
+						action=argparse.BooleanOptionalAction, default=False,
 						help="if true alpha we will not add small eps to the denominator in alpha, but rather choose"
 							 "values where denominator is not zero. Don't touch if you don't know the code very well")
+	parser.add_argument("--alpha_log_eps", type=float, default=1e-10)
+	parser.add_argument("--alpha_denom_eps", type=float, default=1e-3)
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
 	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
 	parser.add_argument("--with_fft_cutoff",
@@ -320,8 +333,8 @@ if __name__ == '__main__':
 			weights=args.weights,
 		)
 	elif args.dist_type == 'uniform' and dim == 2:
-		centers = zip(args.centers_x, args.centers_y)
-		widths = zip(args.widths_x, args.widths_y)
+		centers = list(zip(args.centers_x, args.centers_y))
+		widths = list(zip(args.widths_x, args.widths_y))
 		true_mixture = distributions.UniformBoxMixture(
 			centers=centers,
 			shapes=widths,
@@ -337,14 +350,18 @@ if __name__ == '__main__':
 		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
 	elif args.method == 'led':
 		init_obs = true_mixture.rvs(args.n_samples)
-		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
+		if dim == 1:
+			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
 
 		run_kwargs.update(dict(
 			t_scale=args.t_scale,
 			initial_observations=init_obs,
 			alpha_filter_denom=args.alpha_filter_denom,
+			alpha_log_eps=args.alpha_log_eps,
+			alpha_denom_eps=args.alpha_denom_eps,
 			sampling_method=args.sampling_method,
-			interpolation=args.with_interpolation))
+			interpolation=args.with_interpolation,
+			ndim=dim))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
@@ -365,4 +382,6 @@ if __name__ == '__main__':
 	            results_filepath=res_filepath,
 	            params=args_dict,
 	            init_dist=init_dist,
-	            simulation_step=args.gif_simulation_step, grid=grid)
+	            simulation_step=args.gif_simulation_step,
+	            grid=grid,
+	            ndim=dim)

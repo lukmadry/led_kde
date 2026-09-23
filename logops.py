@@ -18,7 +18,7 @@ def log_results(all_distributions,
                 results_dirpath,
                 results_filepath,
                 params,
-                init_dist, y_bounds=None, simulation_step=100, grid=None):
+                init_dist, y_bounds=None, simulation_step=100, grid=None, ndim=1):
 	"""
 
 	Saves the results in the following format:
@@ -68,47 +68,54 @@ def log_results(all_distributions,
 	fig_stat.savefig(os.path.join(log_dir, "statistics_plots.png"))
 
 	print("saving the picture of the final distribution")
-	fig_final, ax_final = plt.subplots()
-	if grid is not None:
-		ax_final.plot(grid, init_dist, color='orange')
-	else:
-		ax_final.plot(init_dist, color='orange')
-	if grid is not None:
-		ax_final.plot(grid, all_distributions[-1], color='blue')
-	else:
-		ax_final.plot(all_distributions[-1], color='blue')
-	fig_final.suptitle("Orange - original distribution, blue - a final distribution")
-	fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
-
-	if params['save_gif']:
-		print("saving a gif of distribution evolution")
-		fig_gif, ax_gif = plt.subplots()
-		ax_gif.set_title("Distribution evolution")
-		line, = ax_gif.plot([], [])
-		if y_bounds is None:
-			_y = range(len(all_distributions[0]))
-		elif isinstance(y_bounds, (list, tuple)) and len(y_bounds) == 2:
-			_y = np.linspace(y_bounds[0], y_bounds[1], num=len(all_distributions[0]))
+	if ndim == 1:
+		fig_final, ax_final = plt.subplots()
+		if grid is not None:
+			ax_final.plot(grid, init_dist, color='orange')
 		else:
-			raise TypeError("y_bounds must be a list or tuple of size 2")
+			ax_final.plot(init_dist, color='orange')
+		if grid is not None:
+			ax_final.plot(grid, all_distributions[-1], color='blue')
+		else:
+			ax_final.plot(all_distributions[-1], color='blue')
+		fig_final.suptitle("Orange - original distribution, blue - a final distribution")
+		fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
 
-		ax_gif.set_xlim(_y[0], _y[-1])
-		# Determine global min/max across all frames so y-axis remains stable
-		y_min = min(np.min(d) for d in all_distributions)
-		y_max = max(np.max(d) for d in all_distributions)
-		ax_gif.set_ylim(y_min, y_max)
+		if params['save_gif']:
+			print("saving a gif of distribution evolution")
+			fig_gif, ax_gif = plt.subplots()
+			ax_gif.set_title("Distribution evolution")
+			line, = ax_gif.plot([], [])
+			if y_bounds is None:
+				_y = range(len(all_distributions[0]))
+			elif isinstance(y_bounds, (list, tuple)) and len(y_bounds) == 2:
+				_y = np.linspace(y_bounds[0], y_bounds[1], num=len(all_distributions[0]))
+			else:
+				raise TypeError("y_bounds must be a list or tuple of size 2")
 
-		def update(frame):
-			line.set_data(_y, all_distributions[frame]) # some internal mechanics of animation demand that we pass both x and y
-			ax_gif.set_title(f"Distribution at time {frame}")
-			return (line,)
+			ax_gif.set_xlim(_y[0], _y[-1])
+			# Determine global min/max across all frames so y-axis remains stable
+			y_min = min(np.min(d) for d in all_distributions)
+			y_max = max(np.max(d) for d in all_distributions)
+			ax_gif.set_ylim(y_min, y_max)
 
-		anim = FuncAnimation(
-			fig_gif, update, range(0, len(all_distributions), simulation_step),
-		)
+			def update(frame):
+				line.set_data(_y, all_distributions[frame]) # some internal mechanics of animation demand that we pass both x and y
+				ax_gif.set_title(f"Distribution at time {frame}")
+				return (line,)
 
-		anim.save(os.path.join(log_dir, "evolution.gif"), writer='pillow', fps=10)
-		plt.close(fig_gif)
+			anim = FuncAnimation(
+				fig_gif, update, range(0, len(all_distributions), simulation_step),
+			)
+
+			anim.save(os.path.join(log_dir, "evolution.gif"), writer='pillow', fps=10)
+			plt.close(fig_gif)
+	elif ndim == 2:
+		fig_final, axes_final = plt.subplots(2)
+		axes_final[0].contourf(grid[:, :, 0], grid[:, :, 1], init_dist)
+		axes_final[1].contourf(grid[:, :, 0], grid[:, :, 1], all_distributions[-1])
+		fig_final.suptitle("Top : original distributions, bottom : final distribution")
+		fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
 
 	if params['save_distributions']:
 		filename = os.path.join(log_dir, "distribution_logs.hdf5")
@@ -116,6 +123,9 @@ def log_results(all_distributions,
 			f.create_dataset("distribution_grids", all_distributions.shape, data=all_distributions)
 
 	print("Logs saved successfully")
+
+def log_results_2d():
+	pass
 
 PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'n_samples', 'n', 'dist_type']
 def find_datetime_with_this_params(desired_values, results_filepath,

@@ -113,7 +113,7 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
-def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian',
+def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaussian',
                filter_denom=False, denom_eps=1e-3, pos_threshold=1e-6):
 	"""
 	Computes \alpha from LED-KDE. Two-dimensional is at the moment (22/09) experimental so not described in details
@@ -130,12 +130,17 @@ def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian'
 	denom_eps : epsilon added to the denominator
 
 	"""
+	# print(grid.shape)
+	# print("log epsilon: ", log_eps)
+	# print("denom epsilon: ", denom_eps)
 	if len(observations.shape) == 2:
 		grid_orig_shape = grid.shape
-		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
+		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale, keep_shape=True)
 		q_L_approx = q_L_approx.reshape(grid_orig_shape[:2])
 		k_norm_factor = 1 / (2.0 * np.pi * k_scale)
 		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
+		radius = 50*k_scale
+		# print("qlapprox ", q_L_approx.max(), q_L_approx.min(), q_L_approx.std(), q_L_approx.mean())
 	else:
 		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel=kernel)
 		if kernel == 'gaussian_cutoff':
@@ -149,8 +154,11 @@ def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian'
 			k_pdf = partial(exact_unif_1d, width=k_scale)
 		else:
 			raise ValueError("kernel has to be either gaussian or uniform")
-	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid)
-	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(eps + q_L_approx), x_grid=grid)
+		radius = None
+	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid, radius=radius)
+	# print("k_ql_conv ", k_ql_conv.min(), k_ql_conv.max(), k_ql_conv.mean(), k_ql_conv.std())
+	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(log_eps + q_L_approx), x_grid=grid, radius=radius)
+	# print("k_log_ql_conv ", k_log_ql_conv.min(), k_log_ql_conv.max(), k_log_ql_conv.mean(), k_log_ql_conv.std())
 	if filter_denom:
 		where_pos = np.where(k_ql_conv > pos_threshold)[0]
 		return np.exp(k_log_ql_conv[where_pos])/k_ql_conv[where_pos], where_pos
@@ -200,8 +208,9 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 # TODO add the possibility of precomputing the kernel, no need to recompute it every time
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose= False, display_every=20, kernel='gaussian',
-				   alpha_filter_denom=True, interpolation=True,
-				   sampling_method='standard', debug=True, alpha_grid=None):
+				   alpha_filter_denom=True, interpolation=True, alpha_log_eps=1e-10,
+                   alpha_denom_eps=1e-3,
+				   sampling_method='standard', debug=False, alpha_grid=None):
 	"""
 	Samples observations with the LED-KDE method. If a parameter shares the name with one in alpha_func,
 	it is identical to the description there and we will not repeat it here.
@@ -217,13 +226,18 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 	"""
 	N = len(observations)
 	ndim = len(observations.shape)
+	if debug:
+		print(f"Mean: {np.mean(observations):.2f}, std: {np.std(observations):.2f}")
+		print(f"Grid shape: {grid.shape}")
 	# precompute \alpha here (maybe you can factor it out, it was separated for testing and profiling)
 	if alpha_grid is None:
 		if alpha_filter_denom:
-			alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+			alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale,
+			                                   filter_denom=alpha_filter_denom)
 			grid_pos = grid[where_pos]
 		else:
-			alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom)
+			alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom,
+			                        denom_eps=alpha_denom_eps, log_eps=alpha_log_eps)
 			grid_pos = grid
 	else:
 		grid_pos = grid
@@ -247,27 +261,15 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		else:
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
 
-
 		for i in range(n_samples):
 
 			reject = True
-			# if debug:
-			# 	r = 0
-			# 	first_val_sampled = 0
-			# 	local_had_to_reject = False
 			while reject:
 				I = np.random.randint(N)
 				u = l_sampler()
 				w = k_sampler()
 				R = np.random.uniform()
 				X = observations[I] - u - w
-
-				# if debug:
-				# 	if  r == 0:
-				# 		first_val_sampled = X
-				# 	if  r > 1:
-				# 		local_had_to_reject = True
-				# 	r += 1
 
 				alph_val = matcher(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
 				if R < alph_val:
@@ -276,21 +278,10 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 			if verbose and (1+i) % display_every == 0:
 				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
 
-
-		# if debug:
-		# 	print(f"Samples left of median: {samples_left_median} out of {n_samples}")
-		# 	print(f"Samples left of mean: {samples_left_mean} out of {n_samples}")
-		# 	print(f"Presamples left of median: {presamples_left_median} out of {n_samples}")
-		# 	print(f"Presamples left of mean: {presamples_left_mean} out of {n_samples}")
-		#
-		# 	print(f"Had to reject: {had_to_reject} out of {n_samples}")
-		# 	print(f"After rejections {finally_sampled_is_smaller} out of {had_to_reject} have been smaller than initial value")
 	elif sampling_method == 'is':
 		alpha_func_interpolator = partial(matcher, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
 		vals, _ = sample_via_importance_resampling(target_pdf=alpha_func_interpolator, n_samples=n_samples)
 	else:
 		raise ValueError("sampling_method must be either 'standard' or 'is'")
-	# if debug:
-	# 	return vals, alph_vals, nr_rejections
 	return vals
 

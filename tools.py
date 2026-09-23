@@ -211,7 +211,6 @@ def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, radius=None, val_
 	D1, D2 = np.meshgrid(d1, d2)
 	diff_stack = np.dstack([D1, D2])
 	f_grid = f_pdf(diff_stack)
-	print(f_grid.shape)
 	padding_size = len(f_grid) // 2
 	padded_base = np.pad(g_pdf_grid, ((padding_size, padding_size), ),
 	                     mode='constant', constant_values=val_to_pad)
@@ -224,7 +223,7 @@ def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, radius=None):
 	if len(x_grid.shape) == 1:
 		return convolve_continuous_grid_1d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, radius=radius)
 	elif isinstance(x_grid, (tuple, list)) and len(x_grid) == 2 or len(x_grid.shape) == 3:
-		return convolve_continuous_grid_2d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid)
+		return convolve_continuous_grid_2d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, radius=radius)
 	else:
 		raise NotImplementedError("convolution on more than two dimensions is not implemented and likely won't be")
 
