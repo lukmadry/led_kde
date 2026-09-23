@@ -13,6 +13,20 @@ from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_
 # however it cuts the function a little bit and I haven't tested systematically yet if it makes the difference, so keeping it as a separate option
 # TODO move some of the numerical tests into a separate file so that one can always re-test them if needed
 def compute_kde(x, observations, norm_scale, kernel='gaussian'):
+	"""
+	Function that computes kde, i.e. for empirical measure mu^N = 1/N sum_{i=1}^N delta_{X_i} the result is
+	1/N sum_{i=1}^N K(x - X_i)
+
+	where x is a numerical value. If x is an array, then the result is applied componentwise.
+
+	x : np.ndarray or float, values where KDE is computed
+	observations : np.ndarray of dimensions (N,)
+	norm_scale : parameter ruling the precision of KDE, equal to variance in Gaussian distribution
+				or width of uniform distribution (see parameter kernel)
+	kernel : string, possible choices are ['gaussian', 'gaussian_cutoff', 'uniform']
+			gaussian_cutoff is experimental
+
+	"""
 	N = len(observations)
 	val = 0
 	if isinstance(x, Number):
@@ -57,6 +71,12 @@ def compute_kde_2d(x, observations, variance,
 	return np.asarray(estimates_on_x, float)
 
 def compute_kde_scott(x, observations):
+	"""
+	computes KDE where the choice of bandwith is done with Scott's method
+
+	x : np.ndarray or a float. If np.ndarray applied componentwise
+	observations : np.ndarray (N, ) type float
+	"""
 	N = len(observations)
 	h = N**(-1/5.)
 	val = 0
@@ -76,7 +96,22 @@ def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
 
 def alpha_func(grid, observations, t_scale, k_scale, eps=1e-8, kernel='gaussian',
-               filter_denom=True, denom_eps=1e-3, pos_threshold=1e-6):
+               filter_denom=False, denom_eps=1e-3, pos_threshold=1e-6):
+	"""
+	Computes \alpha from LED-KDE. Two-dimensional is at the moment (22/09) experimental so not described in details
+	in a docstring.
+
+	grid : np.ndarray (D, ). Grid with evenly spaced values, typically a result of linspace
+	observations : np.ndarray (N, )
+	t_scale : float, variance of the first, inner kernel
+	k_scale : float, variance of the second, outer kernel
+	eps : float, epsilon value which will be added to log for numerical stability
+	kernel : str, gaussian or uniform, choice of a kernel. If uniform, then {t,k}_scale are widths
+	filter_denom : bool, if True then will give only the values where denominator is positive.
+			Most likely will be deprecated
+	denom_eps : epsilon added to the denominator
+
+	"""
 	if len(observations.shape) == 2:
 		grid_orig_shape = grid.shape
 		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
@@ -143,11 +178,24 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	Z = np.sum(expklog) * dx * dy
 	return expklog / Z
 
-# TODO method: standard does not work very well with 2D
+# TODO method: standard does not work very well with 2D. Maybe it's possible to fix.
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
-				   verbose=True, display_every=20, kernel='gaussian',
+				   verbose= False, display_every=20, kernel='gaussian',
 				   alpha_filter_denom=True, interpolation=True,
 				   sampling_method='standard', debug=True, alpha_grid=None):
+	"""
+	Samples observations with the LED-KDE method. If a parameter shares the name with one in alpha_func,
+	it is identical to the description there and we will not repeat it here.
+
+	n_samples : number of samples
+	verbose : bool, True for printing some progress
+	display_every : int will tell you that we sampled k values
+	alpha_grid : np.ndarray, you can pass already computed alpha grid, this way computation here will be skipped
+	interpolation : bool, whether the values samples will be interpolated to alpha or taken to be equal to values on the grid
+				scheme tends to perform better if True
+	sampling_method : str, 'standard' samples alpha function with special LED-KDE algorithm,
+			'is' samples with importance sampling based on the density computation from alpha
+	"""
 	N = len(observations)
 	ndim = len(observations.shape)
 	# precompute \alpha here (maybe you can factor it out, it was separated for testing and profiling)

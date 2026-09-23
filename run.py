@@ -177,51 +177,80 @@ def run_recurrent_led_with_data_retaining(n_trials, initial_observations, grid, 
 if __name__ == '__main__':
 	# TODO add help arguments
 	parser = argparse.ArgumentParser()
-	parser.add_argument("--n", required=True, type=int)
+	parser.add_argument("--n", required=True, type=int, help="number of iterations")
 	parser.add_argument("--dim", default=1, type=int)
-	parser.add_argument("--lower_bd", default=-5, type=float) # possibly multiple values if dim > 1, but to be changed later on
-	parser.add_argument("--upper_bd", default=5, type=float)
-	parser.add_argument("--method", choices=['led', 'kde', 'led_retain'], type=str, default='led')
+	parser.add_argument("--lower_bd", default=-5, type=float, help="lower bound on the grid") # possibly multiple values if dim > 1, but to be changed later on
+	parser.add_argument("--upper_bd", default=5, type=float, help="upper bound on the grid")
+	parser.add_argument("--method",
+						choices=['led', 'kde', 'led_retain'], type=str, default='led',
+						help=("method of sampling. Choose led for LED-KDE, kde for KDE and led_retain with LED-KDE "
+							  "in a data retaining scheme"))
 
 	# some technical arguments
-	parser.add_argument("--grid_size", default=500, type=int)
-	parser.add_argument("--alpha_filter_denom", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--grid_size", default=500, type=int, help="size of a grid on which we will sample distribution")
+	parser.add_argument("--alpha_filter_denom",
+						action=argparse.BooleanOptionalAction, default=True,
+						help="if true alpha we will not add small eps to the denominator in alpha, but rather choose"
+							 "values where denominator is not zero. Don't touch if you don't know the code very well")
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
-	                    help="it seems to be important to keep it at True, otherwise there is a bias towards negative values")
-	parser.add_argument("--with_fft_cutoff", action=argparse.BooleanOptionalAction, default=False)
+	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
+	parser.add_argument("--with_fft_cutoff",
+						action=argparse.BooleanOptionalAction, default=False, help="experimental, don't touch")
 	parser.add_argument("--seed", type=int)
 
 	# only relevant for retrieving past experiments
-	parser.add_argument("--search", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--search", action=argparse.BooleanOptionalAction, default=False,
+						help="add this parameter if you want to check if similar experiments have already been done. "
+							 "Displays a list of folders in results where experiments with matching keywords have been found."
+							 "Displays a folder if at least half of a keywords match + the ones in full_agreement_keys. See --keys and --full_agreement_keys")
 	parser.add_argument("--keys", nargs='+', help="give a list of keys that will be taken into account "
 	                                              "when performing a search. By default PARAMETER_KEYS in logops.py")
 	parser.add_argument("--full_agreement_keys", nargs='+', help="give a list of keys that have to match perfectly"
-	                                                             "for the experiment to be considered a match.")
+	                                                             "for the experiment to be considered a match. "
+																 "By default only method is considered")
 
 	# distribution arguments
-	parser.add_argument("--dist_type", default='gaussian', choices=['gaussian', 'uniform'])
-	parser.add_argument("--centers", nargs='+', default=[-1, 1], type=float)
-	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35], type=float)
-	parser.add_argument("--widths", nargs='+', default=[0.5, 0.5], type=float)
-	parser.add_argument("--weights", nargs='+', type=float)
+	parser.add_argument("--dist_type", default='gaussian',
+						choices=['gaussian', 'uniform'], help="basic building distribution of an initial mixture")
+	parser.add_argument("--centers", nargs='+', default=[-1, 1],
+						type=float, help="centers of the initial mixture distribution")
+	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35],
+						type=float, help="if dist_type is gaussian, then scales (sddevs) of gaussians. "
+										 "Irrelevant if dist_type is uniform. "
+										 "Can be a float or a list of floats the same legth as centers")
+	parser.add_argument("--widths", nargs='+', default=[0.5, 0.5], type=float,
+						help="if dist_type is uniform, then widths of uniforms. Irrelevant if dist_type is gaussian. "
+							 "Can be a float or a list of floats the same legth as centers.")
+	parser.add_argument("--weights", nargs='+',
+						type=float, help="weights of mixtures. Has to be the same length as centers")
 
 	# kde or led-kde arguments
-	parser.add_argument("--kernel", default='gaussian', choices=['gaussian', 'uniform'])
-	parser.add_argument("--sampling_method", default='standard', choices=['standard', 'is'])
+	parser.add_argument("--kernel", default='gaussian',
+						choices=['gaussian', 'uniform'], help="kernel for LED-KDE. ")
+	parser.add_argument("--sampling_method", default='standard',
+						choices=['standard', 'is'], help="sampling method for LED-KDE. Stick to standard, "
+														 "IS was for debugging")
 	parser.add_argument("--t_scale", default=0.02, type=float)
 	parser.add_argument("--k_scale", default=0.04, type=float)
-	parser.add_argument("--scale_is_variance", action=argparse.BooleanOptionalAction, default=False) # probably deprecated
-	parser.add_argument("--n_candidates", default=10000, type=int)
-	parser.add_argument("--n_samples", default=10000, type=int)
-	parser.add_argument("--n_init_samples", default=1000, type=int, help="number of initial samples, only relevant for data retaining scheme")
+	parser.add_argument("--scale_is_variance",
+						action=argparse.BooleanOptionalAction, default=False) # probably deprecated
+	parser.add_argument("--n_candidates", default=10000, type=int,
+						help="useful for KDE, ignored for everything else. Number of candidates in the standard IS scheme")
+	parser.add_argument("--n_samples", default=10000, type=int,
+						help="Number of samples chosen each round. Choose a small value if method = led_retains")
+	parser.add_argument("--n_init_samples", default=1000, type=int,
+						help="number of initial samples, only relevant for data retaining scheme")
 
 	# arguments related to logging
 	parser.add_argument("--verbosity_freq", default=25, type=int)
 	parser.add_argument("--dump_intermediary_dist", action=argparse.BooleanOptionalAction, default=False)
-	parser.add_argument("--track_git", action=argparse.BooleanOptionalAction, default=True)
-	parser.add_argument("--save_gif", action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--track_git",
+						action=argparse.BooleanOptionalAction, default=True)
+	parser.add_argument("--save_gif",
+						action=argparse.BooleanOptionalAction, default=True, help="will save GIF of evolution if true")
 	parser.add_argument("--save_distributions", action=argparse.BooleanOptionalAction, default=True)
-	parser.add_argument("--gif_simulation_step", default=20, type=int)
+	parser.add_argument("--gif_simulation_step", default=20,
+						type=int, help="if equal to k, will save to gif every k steps. For smooth but costly gif choose 1")
 
 	args = parser.parse_args()
 	args_dict = vars(args)

@@ -65,9 +65,13 @@ def print_statistics(local_pdf, local_samples, metrics_dict, func_dict, i, verbo
 def match_x_to_grid_and_val_1d(x, grid, values_grid,
                             raise_error_if_outside=False, interpolation=True):
     """
+    for given x, finds the closest values in the grid and returns matching value of a function.
+    You can choose to interpolate between two values in the neighbouring indices
 
-    x : float or ndarray
-    it is crucial that grid has evenly-spaced points
+    x : float or ndarray, value to match
+    grid : np.ndarray, a grid with even spaces (this assumption is NOT checked, but is crucial)
+    values_grid : values of the function. Has to have the same shape as grid
+    interpolation : bool if False we will give the value matching the index on lhs.
     """
     grid_step = grid[1] - grid[0]
     grid_min = grid[0]
@@ -149,6 +153,11 @@ def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
 # TODO to be sped up for the kernel with small support
 # TODO check if you can use scipy.ndimage instead, it's probably optimised beyond what you can obtain here
 def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
+	"""
+
+
+	"""
+
 	N = len(x_grid)
 	dx = x_grid[1] - x_grid[0]
 	if radius is None:
@@ -165,7 +174,7 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
 	)
 	return fftconvolve(padded_base, f_grid_conv, mode='valid') * dx
 
-
+# TODO padding as above
 def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
 	ns_y = g_pdf_grid.shape
 	x_grid, x1_1d, x2_1d = _interpret_two_dim_grid(x_grid)
