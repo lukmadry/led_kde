@@ -1,5 +1,5 @@
 import numpy as np
-from scipy.stats import norm, multivariate_normal, uniform
+from scipy.stats import norm, multivariate_normal, uniform, rv_continuous
 from numbers import Number
 
 # base class that will allow us to easily add distributions together if needed
@@ -23,6 +23,10 @@ class Distribution:
 		self.multivar = False # by default, we're dealing with one-dim objects
 
 	def pdf(self, grid):
+		"""
+		grid: if multivar=False then just a 1D array. if multivar=True then an array in shape (N, 2)
+		returns an array in the same shape as input
+		"""
 		weights = self.weights/np.sum(self.weights)
 		if not self.multivar:
 			final_density = np.zeros_like(grid)
@@ -101,6 +105,47 @@ class UniformMixture(Distribution):
 		for c, w in zip(self.centers, self.widths):
 			dist = uniform(loc=c-w/2, scale=w)
 			self.distributions.append(dist)
+
+class UniformBox:
+	def __init__(self, corner, shapes):
+		self.corner = np.array(corner)
+		self.shapes = np.array(shapes)
+
+		self.dist_x = uniform(corner[0] - shapes[0]/2, scale=shapes[0])
+		self.dist_y = uniform(corner[1] - shapes[1]/2, scale=shapes[1])
+
+	def pdf(self, grid):
+		"""
+		grid: np.array with shape (N, K,  2)
+
+		returns an array with shape (N, K)
+		"""
+		flat_grid = grid.reshape(-1, 2)
+		pdf_x = self.dist_x.pdf(flat_grid[:, 0])
+		pdf_y = self.dist_y.pdf(flat_grid[:, 1])
+		pdf = pdf_x * pdf_y # since boxes are independent uniforms
+		return pdf.reshape(grid.shape[:-1])
+
+	def rvs(self, no_samples):
+		"""
+		no_samples : int
+		"""
+		samples_x = self.dist_x.rvs(no_samples)
+		samples_y = self.dist_y.rvs(no_samples)
+		return np.stack([samples_x, samples_y], axis=1)
+
+class UniformMultivarMixture(Distribution):
+	def __init__(self, centers, shapes, weights=None):
+		super().__init__(centers, weights)
+
+		self.shapes = np.array(shapes)
+		if self.centers.ndim != self.shapes.ndim and self.centers.shape[0] != self.shapes.shape[0]:
+			raise ValueError("centers and shapes should have the same dimensions")
+
+		for (cx, cy), (wx, wy) in zip(self.centers, self.shapes):
+			self.distributions.append(UniformBox(corner=(cx, cy), shapes=(wx, wy)))
+
+		self.multivar = True
 
 # will encapsulate kde for pdf and is for rvs
 class CustomDistribution:
