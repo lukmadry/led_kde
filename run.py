@@ -245,6 +245,7 @@ if __name__ == '__main__':
 	parser.add_argument("--centers_y", nargs='+', type=float)
 	parser.add_argument("--scales_x", nargs='+', type=float)
 	parser.add_argument("--scales_y", nargs='+', type=float)
+	parser.add_argument("--covariances", nargs='+', type=float)
 	parser.add_argument("--widths_x", nargs='+', type=float)
 	parser.add_argument("--widths_y", nargs='+', type=float)
 

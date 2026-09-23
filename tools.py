@@ -1,4 +1,5 @@
 from numbers import Number
+import time # for profiling
 
 import numpy as np
 from scipy import integrate
@@ -43,8 +44,7 @@ def exact_gaussian_1d(x, var):
 	"""
 	Speeds up the computation with respect to using scipy.stats.norm(loc=0, scale=np.sqrt(var)).pdf
 	"""
-	sddev = np.sqrt(var)
-	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
+	return 1/np.sqrt(2.0*np.pi*var) * np.exp(-np.square(x)/(2.0*var))
 
 def exact_gaussian_1d_cutoff(x, var):
 	"""
@@ -156,6 +156,15 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 # 	else:
 # 		raise NotImplementedError("x has to be one or two-dimensional")
 
+def compute_gaussian_kernel_1d(radius, dx, var):
+	vals = np.arange(-radius, radius, step=dx)
+	return exact_gaussian_1d(vals, var)
+
+def compute_gaussian_kernel_2d(radius):
+	pass
+
+def compute_uniform_kernel(radius):
+	pass
 
 # TODO to be sped up for the kernel with small support
 # TODO check if you can use scipy.ndimage instead, it's probably optimised beyond what you can obtain here
@@ -167,11 +176,14 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
 
 	N = len(x_grid)
 	dx = x_grid[1] - x_grid[0]
+	start = time.perf_counter()
 	if radius is None:
 		diffs = np.arange(-(N-1)*dx, (N-1)*dx + 0.5*dx, step=dx)
 	else:
 		diffs = np.arange(-radius, radius, step=dx)
 	f_grid_conv = f_pdf(diffs)
+	end = time.perf_counter()
+	print(f"time to create a kernel: {1000*(end - start):.3f}ms")
 	padding_size = len(f_grid_conv) // 2
 	padded_base = np.pad(
 		g_pdf_grid,
@@ -180,6 +192,16 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
 		constant_values=(g_pdf_grid[0], g_pdf_grid[-1]),
 	)
 	return fftconvolve(padded_base, f_grid_conv, mode='valid') * dx
+
+def convolve_cont_grid_1d_with_kernel(base, kernel):
+	padding_size = len(kernel) // 2
+	padded_base = np.pad(
+		base,
+		(padding_size, padding_size),
+		mode='constant',
+		constant_values=(base[0], base[-1]),
+	)
+	return fftconvolve(padded_base, kernel, mode='valid')
 
 # TODO give the possibility to pass the kernel
 def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, radius=None, val_to_pad=0):
@@ -217,6 +239,9 @@ def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, radius=None, val_
 
 	conv_result = fftconvolve(padded_base, f_grid, mode="valid") * dy1 * dy2
 	return conv_result
+
+def convolve_cont_grid_2d_with_kernel():
+	pass
 
 def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, radius=None):
 	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid

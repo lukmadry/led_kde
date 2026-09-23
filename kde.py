@@ -3,6 +3,8 @@ import math
 from functools import partial
 from numbers import Number
 
+import time # for profiling
+
 from scipy.stats import norm, multivariate_normal, uniform
 
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
@@ -165,6 +167,10 @@ def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaus
 	else:
 		return np.exp(k_log_ql_conv)/(denom_eps+k_ql_conv)
 
+# the difference is that you need to give a ready kernel and we will not question it
+def alpha_func_fast():
+	pass
+
 # TODO change k_pdf into explicit Gaussian computation
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
@@ -246,6 +252,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 									np.max(alpha_grid))
 	matcher = match_x_to_grid_and_val_1d if ndim == 1 else match_x_to_grid_and_val_2d
 	if sampling_method == 'standard':
+		start = time.perf_counter()
 		if ndim == 1 and kernel == 'gaussian':
 			k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
 			l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
@@ -260,7 +267,10 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 			vals = np.zeros((n_samples, 2))
 		else:
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
+		end = time.perf_counter()
+		print(f"creating samplers take: {1000*(end-start):.3f} ms")
 
+		start = time.perf_counter()
 		for i in range(n_samples):
 
 			reject = True
@@ -277,6 +287,8 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 					reject = False
 			if verbose and (1+i) % display_every == 0:
 				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
+		end = time.perf_counter()
+		print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
 
 	elif sampling_method == 'is':
 		alpha_func_interpolator = partial(matcher, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
@@ -285,3 +297,5 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		raise ValueError("sampling_method must be either 'standard' or 'is'")
 	return vals
 
+def sample_led_kde_fast(n_samples, observations, grid, t_kernel, t_sampler, k_kernel, k_sampler, alpha_log_eps=1e-10, alpha_denom_eps=1e-3):
+	pass
