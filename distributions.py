@@ -44,8 +44,12 @@ class Distribution:
 		weights = self.weights/np.sum(self.weights)
 		idx = np.random.choice(a=self.N, size=no_samples, p=weights)
 		samples = []
-		for i in idx:
-			samples.append(self.distributions[i].rvs())
+		if not self.multivar:
+			for i in idx:
+				samples.append(self.distributions[i].rvs())
+		else:
+			for i in idx:
+				samples.append(self.distributions[i].rvs().flatten())
 		return np.array(samples)
 
 class GaussianMixture(Distribution):
@@ -126,15 +130,17 @@ class UniformBox:
 		pdf = pdf_x * pdf_y # since boxes are independent uniforms
 		return pdf.reshape(grid.shape[:-1])
 
-	def rvs(self, no_samples):
+	def rvs(self, no_samples=None):
 		"""
 		no_samples : int
 		"""
+		if no_samples is None:
+			no_samples = 1
 		samples_x = self.dist_x.rvs(no_samples)
 		samples_y = self.dist_y.rvs(no_samples)
 		return np.stack([samples_x, samples_y], axis=1)
 
-class UniformMultivarMixture(Distribution):
+class UniformBoxMixture(Distribution):
 	def __init__(self, centers, shapes, weights=None):
 		super().__init__(centers, weights)
 

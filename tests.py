@@ -3,7 +3,7 @@ import numpy as np
 import time
 
 from kde import alpha_func, compute_led_kde, compute_kde, sample_led_kde
-from tools import exact_gaussian_1d, match_x_to_grid_and_val, match_x_to_grid_and_val_1d
+from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d
 from functools import partial
 from distributions import GaussianMixture, UniformMixture
 from run import run_recurrent_led_kde_with_forgetting, run_recurrent_led_with_data_retaining
@@ -53,16 +53,17 @@ class TestMatching(unittest.TestCase):
 		res = match_x_to_grid_and_val_1d(1.23, grid=x, values_grid=y, interpolation=False)
 		self.assertAlmostEqual(res, 1.2**2)
 
-	def test_matching_routing(self):
-
-		xg = np.linspace(-5, 5, 11)
-		u = np.asarray([-3.45, 3.23])
-		res = match_x_to_grid_and_val(x=xg, grid=u, values_grid=u, interpolation=False)
-		self.assertTrue(isinstance(res, np.ndarray))
-		self.assertTrue(res.ndim == 1)
-
-		with self.assertRaises(expected_exception=IndexError):
-			match_x_to_grid_and_val(x=xg.reshape(-1, 1), grid=u, values_grid=u, interpolation=False)
+	# I abandoned the routing
+	# def test_matching_routing(self):
+	#
+	# 	xg = np.linspace(-5, 5, 11)
+	# 	u = np.asarray([-3.45, 3.23])
+	# 	res = match_x_to_grid_and_val(x=xg, grid=u, values_grid=u, interpolation=False)
+	# 	self.assertTrue(isinstance(res, np.ndarray))
+	# 	self.assertTrue(res.ndim == 1)
+	#
+	# 	with self.assertRaises(expected_exception=IndexError):
+	# 		match_x_to_grid_and_val(x=xg.reshape(-1, 1), grid=u, values_grid=u, interpolation=False)
 
 class TestGaussianMixture(unittest.TestCase):
 	def test_gmixture_creation(self):
@@ -236,21 +237,23 @@ def profile_sampling_led(runs=10, init_s_size=1000, grid_sizes=[100, 500, 1000],
 	return avg_times
 
 if __name__ == '__main__':
-	K = 10
-	print("Profiling KDE")
-	kde_avg_times = profile_kde(K)
-	print("Profiling KDE with cutoff")
-	kde_cutoff_avg_times = profile_kde_cutoff(K)
-	print("Profiling alpha function")
-	alpha_avg_times = profile_alpha_func(K)
-	print("Profiling LED sampling")
-	led_sampling = profile_sampling_led(K)
+	import sys
+	if len(sys.argv) > 1 and sys.argv[1] == '--profile':
+		K = 10
+		print("Profiling KDE")
+		kde_avg_times = profile_kde(K)
+		print("Profiling KDE with cutoff")
+		kde_cutoff_avg_times = profile_kde_cutoff(K)
+		print("Profiling alpha function")
+		alpha_avg_times = profile_alpha_func(K)
+		print("Profiling LED sampling")
+		led_sampling = profile_sampling_led(K)
 
-	for fname, arr in zip(['kde', 'kde_cutoff', 'alpha', 'led'],
-						  [kde_avg_times, kde_cutoff_avg_times, alpha_avg_times, led_sampling]):
-		print(fname)
-		for g, s, avg in arr:
-			print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")
+		for fname, arr in zip(['kde', 'kde_cutoff', 'alpha', 'led'],
+							  [kde_avg_times, kde_cutoff_avg_times, alpha_avg_times, led_sampling]):
+			print(fname)
+			for g, s, avg in arr:
+				print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")
 
 	unittest.main()
 

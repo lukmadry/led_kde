@@ -9,7 +9,8 @@ import os
 
 # other parts of the project
 import distributions
-from tools import sample_via_importance_resampling, kl_divergence_observations, support_width, StrangeAlphaException, print_statistics
+from tools import (sample_via_importance_resampling, kl_divergence_observations, support_width,
+                   StrangeAlphaException, print_statistics, run_dimension_consistency_check)
 from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 
@@ -71,7 +72,7 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 def run_recurrent_kde_with_retaining(**kwargs):
 	raise NotImplementedError("KDE with retaining not implemented yet")
 
-# TODO for some reason it doesn't appear to be working very well on 2D data, that is a spiral
+# TODO instead of doing so many checks for dimensions you should rather write two different variants, one for 1d and one for 2d
 def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
 	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
 	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
@@ -79,6 +80,7 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
     sampling_method='standard', interpolation=True):
 	"""
 
+	grid:
 	"""
 	all_pdfs = []
 	statistics = []
@@ -90,6 +92,8 @@ def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, 
 		kde_scale = np.sqrt(kde_scale)
 
 	t0 = datetime.datetime.now()
+	# TODO move precomputing kernel for \alpha here
+
 	for i in range(n_trials):
 
 		try:
@@ -178,7 +182,6 @@ if __name__ == '__main__':
 	# TODO add help arguments
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--n", required=True, type=int, help="number of iterations")
-	parser.add_argument("--dim", default=1, type=int)
 	parser.add_argument("--lower_bd", default=-5, type=float, help="lower bound on the grid") # possibly multiple values if dim > 1, but to be changed later on
 	parser.add_argument("--upper_bd", default=5, type=float, help="upper bound on the grid")
 	parser.add_argument("--method",
@@ -212,17 +215,29 @@ if __name__ == '__main__':
 	# distribution arguments
 	parser.add_argument("--dist_type", default='gaussian',
 						choices=['gaussian', 'uniform'], help="basic building distribution of an initial mixture")
-	parser.add_argument("--centers", nargs='+', default=[-1, 1],
+
+	# one dimensional arguments
+	parser.add_argument("--centers", nargs='+',
 						type=float, help="centers of the initial mixture distribution")
-	parser.add_argument("--scales", nargs='+', default=[0.35, 0.35],
+	parser.add_argument("--scales", nargs='+',
 						type=float, help="if dist_type is gaussian, then scales (sddevs) of gaussians. "
 										 "Irrelevant if dist_type is uniform. "
 										 "Can be a float or a list of floats the same legth as centers")
-	parser.add_argument("--widths", nargs='+', default=[0.5, 0.5], type=float,
+	parser.add_argument("--widths", nargs='+', type=float,
 						help="if dist_type is uniform, then widths of uniforms. Irrelevant if dist_type is gaussian. "
 							 "Can be a float or a list of floats the same legth as centers.")
+
+	# two-dimensional arguments
+	parser.add_argument("--centers_x", nargs='+', type=float)
+	parser.add_argument("--centers_y", nargs='+', type=float)
+	parser.add_argument("--scales_x", nargs='+', type=float)
+	parser.add_argument("--scales_y", nargs='+', type=float)
+	parser.add_argument("--widths_x", nargs='+', type=float)
+	parser.add_argument("--widths_y", nargs='+', type=float)
+
 	parser.add_argument("--weights", nargs='+',
 						type=float, help="weights of mixtures. Has to be the same length as centers")
+
 
 	# kde or led-kde arguments
 	parser.add_argument("--kernel", default='gaussian',
@@ -269,8 +284,15 @@ if __name__ == '__main__':
 		find_datetime_with_this_params(**kwargs_param_search)
 		exit()
 
-	grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
-	
+	dim = run_dimension_consistency_check(args)
+	if dim == 1:
+		grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
+	else:
+		print("detected two dimensions. Note that this path is still experimental")
+		grid_x, grid_y = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size), np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
+		grid = np.meshgrid(grid_x, grid_y)
+		grid = np.dstack(grid)
+
 	# TODO to be made more concise, a lot of repetition
 	run_kwargs = dict(
 		n_trials=args.n, 
@@ -283,18 +305,27 @@ if __name__ == '__main__':
 		n_samples=args.n_samples,
 		kernel=args.kernel)
 
-	if args.dist_type == 'gaussian':
+	if args.dist_type == 'gaussian' and dim == 1:
 		true_mixture = distributions.GaussianMixture(
 			centers=args.centers,
 			scales=args.scales,
 			weights=args.weights,
 			scale_is_variance=args.scale_is_variance)
-
-	if args.dist_type == 'uniform':
+	elif args.dist_type == 'gaussian' and dim == 2:
+		raise NotImplementedError
+	elif args.dist_type == 'uniform' and dim == 1:
 		true_mixture = distributions.UniformMixture(
 			centers=args.centers,
 			widths=args.widths,
 			weights=args.weights,
+		)
+	elif args.dist_type == 'uniform' and dim == 2:
+		centers = zip(args.centers_x, args.centers_y)
+		widths = zip(args.widths_x, args.widths_y)
+		true_mixture = distributions.UniformBoxMixture(
+			centers=centers,
+			shapes=widths,
+			weights=args.weights
 		)
 
 	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}")
@@ -304,7 +335,6 @@ if __name__ == '__main__':
 
 		run_kwargs.update(dict(starting_dist=true_mixture.pdf))
 		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
-
 	elif args.method == 'led':
 		init_obs = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
@@ -316,7 +346,6 @@ if __name__ == '__main__':
 			sampling_method=args.sampling_method,
 			interpolation=args.with_interpolation))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
-
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
 

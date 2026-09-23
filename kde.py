@@ -5,8 +5,9 @@ from numbers import Number
 
 from scipy.stats import norm, multivariate_normal, uniform
 
-from tools import (convolve_continuous_grid, exact_unif_1d, match_x_to_grid_and_val, exact_gaussian_1d,
-                   StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff)
+from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
+                   StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
+                   match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
@@ -48,13 +49,28 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	return val / N
 
 # maybe it's possible to speed it up even more by cutting off v small values
+# profiling - it was profiled against a naive version, allocation of matrices seems to win over naive looping
+# TODO profile to check which batch_size would be optimal
 def compute_kde_2d(x, observations, variance,
-                    batch_size=1000):
+                    batch_size=5000, keep_shape=True):
+	"""
+	computes KDE of 2-dimensional observations, returns np.ndarray of shape (M, ).
+	Works by slicing x in batches of size batch_size.
+
+	x: np.ndarray of (N, 2) or (N, K, 2). M = N or M = N * K
+	observations : np.ndarray of (N, 2)
+	variance : float
+	batch_size : int. Set it to be as high as you can, speeds up computation.
+	keep_shape : bool. If True final result will be reshaped to (N, K). Only used if x was passed in 3dim form
+	"""
 	if len(observations.shape) != 2:
 		raise ValueError("observations must be 2D")
 
 	if len(x.shape) == 3:
+		orig_dim = x.shape[:-1]
 		x = x.reshape(-1, 2)
+	else:
+		keep_shape = False # in this case it will be impossible to reach orig_dim which won't exist
 
 	norm_factor = 1.0 / (2.0 * np.pi * variance)
 	M = x.shape[0]
@@ -68,6 +84,8 @@ def compute_kde_2d(x, observations, variance,
 		kernel_vals = norm_factor * np.exp(-sq_dist / (variance * 2.0))
 		estimates_on_x[idx:end_idx] = np.mean(kernel_vals, axis=1)
 
+	if keep_shape:
+		return estimates_on_x.reshape(*orig_dim)
 	return np.asarray(estimates_on_x, float)
 
 def compute_kde_scott(x, observations):
@@ -89,7 +107,7 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 		x = [x]
 	vals = []
 	for v in x:
-		vals.append(match_x_to_grid_and_val(v, grid, kde, interpolation=True))
+		vals.append(match_x_to_grid_and_val_1d(v, grid, kde, interpolation=True))
 	return vals
 
 def kde_sampled_pdf_func(grid, kde):
@@ -179,6 +197,7 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	return expklog / Z
 
 # TODO method: standard does not work very well with 2D. Maybe it's possible to fix.
+# TODO add the possibility of precomputing the kernel, no need to recompute it every time
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose= False, display_every=20, kernel='gaussian',
 				   alpha_filter_denom=True, interpolation=True,
@@ -211,7 +230,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 	if np.max(alpha_grid) > 1.01:
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 									np.max(alpha_grid))
-
+	matcher = match_x_to_grid_and_val_1d if ndim == 1 else match_x_to_grid_and_val_2d
 	if sampling_method == 'standard':
 		if ndim == 1 and kernel == 'gaussian':
 			k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
@@ -227,6 +246,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 			vals = np.zeros((n_samples, 2))
 		else:
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
+
 
 		for i in range(n_samples):
 
@@ -249,7 +269,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				# 		local_had_to_reject = True
 				# 	r += 1
 
-				alph_val = match_x_to_grid_and_val(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
+				alph_val = matcher(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
 				if R < alph_val:
 					vals[i] = X
 					reject = False
@@ -266,7 +286,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		# 	print(f"Had to reject: {had_to_reject} out of {n_samples}")
 		# 	print(f"After rejections {finally_sampled_is_smaller} out of {had_to_reject} have been smaller than initial value")
 	elif sampling_method == 'is':
-		alpha_func_interpolator = partial(match_x_to_grid_and_val, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
+		alpha_func_interpolator = partial(matcher, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
 		vals, _ = sample_via_importance_resampling(target_pdf=alpha_func_interpolator, n_samples=n_samples)
 	else:
 		raise ValueError("sampling_method must be either 'standard' or 'is'")

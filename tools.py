@@ -4,6 +4,7 @@ import numpy as np
 from scipy import integrate
 from scipy.stats import entropy, norm
 from scipy.signal import fftconvolve
+from scipy.interpolate import interpn
 from scipy.special import erf
 
 # TODO speed up convolutions by discarding values that are essentially zero, may need more specific variant of the code
@@ -12,11 +13,44 @@ try:
 	import git
 except ImportError:
 	print("could not import git package")
+
+
+# checks if all the parameters are consistent with desired dimension
+def run_dimension_consistency_check(args):
+	dim_one_not_none = 0
+	dim_two_not_none = 0
+
+	for arg in [args.centers, args.scales, args.widths]:
+		if arg is not None:
+			dim_one_not_none += 1
+	for arg in [args.centers_x, args.centers_y, args.scales_x, args.scales_y, args.widths_x, args.widths_y]:
+		if arg is not None:
+			dim_two_not_none += 1
+
+	if dim_one_not_none > 0 and dim_two_not_none > 0:
+		raise ValueError(f"you passed arguments for both one and two dimensions. "
+		                 f"One dimension: centers: {args.centers}, scales: {args.scales}, widths: {args.widths}"
+		                 f"Two dimensions: centers: {args.centers_x, args.centers_y}, scales: {args.scales_x, args.scales_y}, "
+		                 f"widths: {args.widths_x, args.widths_y}")
+	elif dim_one_not_none > 0 and dim_two_not_none == 0:
+		return 1
+	elif dim_two_not_none > 0 and dim_one_not_none == 0:
+		return 2
+	elif dim_one_not_none == 0 and dim_two_not_none == 0:
+		raise ValueError("you did not pass arguments for any of possible dimensions.")
+
 def exact_gaussian_1d(x, var):
+	"""
+	Speeds up the computation with respect to using scipy.stats.norm(loc=0, scale=np.sqrt(var)).pdf
+	"""
 	sddev = np.sqrt(var)
 	return 1/(2.0*np.pi*sddev) * np.exp(-np.square(x)/(2.0*var))
 
 def exact_gaussian_1d_cutoff(x, var):
+	"""
+	Was supposed to speed up the computation even more than exact_gaussian_1d, but you need to assign zeros
+	Experimental (23/09)
+	"""
 	# TODO add normalisation, right now it's not a probability distribution
 	far_bool = np.abs(x) > 50*var
 	sddev = np.sqrt(2.0*np.pi*var)
@@ -42,10 +76,22 @@ def _interpret_two_dim_grid(grid):
 		y = f_grid[:, 0, 1]
 	return f_grid, x, y
 
-def print_statistics(local_pdf, local_samples, metrics_dict, func_dict, i, verbosity_freq):
-	# TODO find a way to put the following in a single function to remove duplication
+def print_statistics(local_pdf, local_samples, metrics, func_dict, i, verbosity_freq):
+	"""
+	Helper function used in the main pass to print statistics of the current distribution.
+
+	Return a dictionary with values of statistics of pdf and samples.
+
+	local_pdf : np.ndarray of pdf
+	local_samples : np.ndarray of samples
+	func_dict : dictionary of format str : Callable . If string ends with ___density then
+			Callable will be applied to local_pdf, if not it will be applied to local_samples
+	metrics : iterable with strings of metrics names. Has to be a subset of keys in func_dict
+	i : index to display
+	verbosity_freq : dictates verbosity, if 1+i is divisible by this value, will print descriptive statistics
+	"""
 	stat = {}
-	for s in metrics_dict:
+	for s in metrics:
 		if s.endswith("___density"):
 			new_name = s.split("___")[0] + " of density"
 			stat[new_name] = func_dict[s](local_pdf)
@@ -89,65 +135,26 @@ def match_x_to_grid_and_val_1d(x, grid, values_grid,
     idx = np.clip(idx, 0, len(grid) - 1)
     return values_grid[idx]
 
-# TODO vectorise
+# I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
                                raise_error_if_outside=False, interpolation=True):
 	"""
 	grid :
 	"""
-	grid, x_linspace, y_linspace = _interpret_two_dim_grid(grid)
 
-	grid_stepx = x_linspace[1] - x_linspace[0]
-	grid_stepy = y_linspace[1] - y_linspace[0]
-	grid_minx = x_linspace[0]
-	grid_miny = y_linspace[0]
-	grid_maxx = x_linspace[-1]
-	grid_maxy = y_linspace[-1]
-	nx = len(x_linspace)
-	ny = len(y_linspace)
-
-	sm_x = x[0] < grid_minx
-	sm_y = x[1] < grid_miny
-	bg_x = x[0] >= grid_maxx
-	bg_y = x[1] >= grid_maxy
-
-	if raise_error_if_outside and (sm_x or sm_y or bg_x or bg_y):
-		raise ValueError("x is not allowed outside the grid")
-
-	if sm_x:
-		idx_x = 0
-	elif bg_x:
-		idx_x = nx-1
-	else:
-		idx_x = int((x[0] - grid_minx) / grid_stepx)
-	if sm_y:
-		idx_y = 0
-	elif bg_y:
-		idx_y = ny-1
-	else:
-		idx_y = int( (x[1] - grid_miny) / grid_stepy )
-
-	# a heuristic, not sure what is optimal here. Hopefully it doesn't matter all that much
-	# I guess there exist a better variant where we use the diagonal as well
-	# we should also interpolate other edges
+	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
-		dright_x = values_grid[idx_x+1, idx_y] - x[0]
-		dright_y = values_grid[idx_x, idx_y+1] - x[1]
-		weight_x = dright_x / grid_stepx
-		weight_y = dright_y / grid_stepy
-		vx = values_grid[idx_x, idx_y] * weight_x + values_grid[idx_x+1, idx_y] * (1-weight_x)
-		vy = values_grid[idx_x, idx_y] * weight_y + values_grid[idx_x, idx_y+1] * (1-weight_y)
-		return vx/2.0 + vy/2.0
-
-	return values_grid[idx_x, idx_y]
-
-def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
-	if isinstance(x, Number) or (isinstance(x, np.ndarray) and len(x.shape) == 1):
-		return match_x_to_grid_and_val_1d(x, grid, values_grid, raise_error_if_outside=False, interpolation=interpolation)
-	elif len(x.shape) == 2:
-		return match_x_to_grid_and_val_2d(x, grid, values_grid, interpolation=interpolation, raise_error_if_outside=False)
+		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x)
 	else:
-		raise NotImplementedError("x has to be one or two-dimensional")
+		raise NotImplementedError
+#
+# def match_x_to_grid_and_val(x, grid, values_grid, interpolation):
+# 	if isinstance(x, Number) or (isinstance(x, np.ndarray) and ):
+# 		return match_x_to_grid_and_val_1d(x, grid, values_grid, raise_error_if_outside=False, interpolation=interpolation)
+# 	elif x.shape[0] == 2:
+# 		return match_x_to_grid_and_val_2d(x, grid, values_grid, interpolation=interpolation, raise_error_if_outside=False)
+# 	else:
+# 		raise NotImplementedError("x has to be one or two-dimensional")
 
 
 # TODO to be sped up for the kernel with small support
@@ -174,36 +181,45 @@ def convolve_continuous_grid_1d_fft(f_pdf, g_pdf_grid, x_grid, radius=None):
 	)
 	return fftconvolve(padded_base, f_grid_conv, mode='valid') * dx
 
-# TODO padding as above
-def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, y_bounds=None):
-	ns_y = g_pdf_grid.shape
+# TODO give the possibility to pass the kernel
+def convolve_continuous_grid_2d_fft(f_pdf, g_pdf_grid, x_grid, radius=None, val_to_pad=0):
 	x_grid, x1_1d, x2_1d = _interpret_two_dim_grid(x_grid)
 
-	if y_bounds is None:
-		y1_1d = x1_1d
-		y2_1d = x2_1d
-	else:
-		y1_1d = np.linspace(y_bounds[0][0], y_bounds[0][1], ns_y[0])
-		y2_1d = np.linspace(y_bounds[1][0], y_bounds[1][1], ns_y[1])
+	y1_1d = x1_1d
+	y2_1d = x2_1d
 
+	# artefacts of the old code with y_bounds
 	dx1 = x1_1d[1] - x1_1d[0]
 	dx2 = x2_1d[1] - x2_1d[0]
 	dy1 = y1_1d[1] - y1_1d[0]
 	dy2 = y2_1d[1] - y2_1d[0]
 
-	d1 = np.arange(
-		-(len(y1_1d)-1)*dy1, (len(x1_1d)-1)*dx1 + 0.5*dx1, step=dx1
-	)
-	d2 = np.arange(
-		-(len(y2_1d)-1)*dy2, (len(x2_1d)-1)*dx2 + 0.5*dx2, step=dx2
-	)
+	if radius is None:
+		d1 = np.arange(
+			-(len(y1_1d)-1)*dy1, (len(x1_1d)-1)*dx1 + 0.5*dx1, step=dx1
+		)
+		d2 = np.arange(
+			-(len(y2_1d)-1)*dy2, (len(x2_1d)-1)*dx2 + 0.5*dx2, step=dx2
+		)
+	else:
+		d1 = np.arange(
+			-radius, radius + dx1, step=dx1
+		)
+		d2 = np.arange(
+			-radius, radius + dx2, step=dx2
+		)
 	D1, D2 = np.meshgrid(d1, d2)
 	diff_stack = np.dstack([D1, D2])
 	f_grid = f_pdf(diff_stack)
-	conv_result = fftconvolve(f_grid, g_pdf_grid, mode="valid") * dy1 * dy2
+	print(f_grid.shape)
+	padding_size = len(f_grid) // 2
+	padded_base = np.pad(g_pdf_grid, ((padding_size, padding_size), ),
+	                     mode='constant', constant_values=val_to_pad)
+
+	conv_result = fftconvolve(padded_base, f_grid, mode="valid") * dy1 * dy2
 	return conv_result
 
-def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, y_bounds=None, radius=None):
+def convolve_continuous_grid(f_pdf, g_pdf_grid, x_grid, radius=None):
 	# will redirect to a matching implementation of convolve_... depending on the dimensions of x_grid
 	if len(x_grid.shape) == 1:
 		return convolve_continuous_grid_1d_fft(f_pdf=f_pdf, g_pdf_grid=g_pdf_grid, x_grid=x_grid, radius=radius)
