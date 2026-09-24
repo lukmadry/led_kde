@@ -6,10 +6,12 @@ from numbers import Number
 import time # for profiling
 
 from scipy.stats import norm, multivariate_normal, uniform
+from scipy.signal import fftconvolve
 
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
-                   match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d)
+                   match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, convolve_cont_grid_1d_with_kernel,
+                   convolve_cont_grid_2d_with_kernel)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
@@ -50,6 +52,37 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 		raise ValueError("kernel has to be either 'gaussian' or 'uniform'")
 	return val / N
 
+def compute_kde_binned_fft(x, observations, norm_scale, dx):
+	"""
+	uses binning-fft method to compute kde.
+
+	x: np.ndarray (M, )
+	observations: np.ndarray (N, )
+	norm_scale: float
+	dx: float, step of a grid
+	"""
+	x_grid = np.asarray(x, dtype=np.float64)
+	obs = np.asarray(observations, dtype=np.float64)
+
+	M = len(x_grid)
+
+	half_step = dx / 2.0
+	bins = np.concatenate(
+		[
+			x_grid - half_step,
+			[x_grid[-1] + half_step],
+		]
+	)
+
+	weights, _ = np.histogram(obs, bins=bins)
+	weights = weights.astype(np.float64) / len(obs)
+
+	kernel_x = np.arange(-(M-1) * dx, M*dx, step=dx) * dx
+	kernel_vals = exact_gaussian_1d(kernel_x, norm_scale)
+
+	density = fftconvolve(weights, kernel_vals, mode="same")
+	return density
+
 # maybe it's possible to speed it up even more by cutting off v small values
 # profiling - it was profiled against a naive version, allocation of matrices seems to win over naive looping
 # TODO profile to check which batch_size would be optimal
@@ -89,6 +122,13 @@ def compute_kde_2d(x, observations, variance,
 	if keep_shape:
 		return estimates_on_x.reshape(*orig_dim)
 	return np.asarray(estimates_on_x, float)
+
+def compute_kde_scott_2d(x, observations, batch_size=10000, keep_shape=True):
+	"""
+	wrapper for compute_kde_2d that computes the variance
+	"""
+	variance = 1/(len(observations)**(1/6.))
+	return compute_kde_2d(x, observations, variance=variance, keep_shape=keep_shape, batch_size=batch_size)
 
 def compute_kde_scott(x, observations):
 	"""
@@ -168,8 +208,27 @@ def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaus
 		return np.exp(k_log_ql_conv)/(denom_eps+k_ql_conv)
 
 # the difference is that you need to give a ready kernel and we will not question it
-def alpha_func_fast():
-	pass
+def _alpha_func_direct_1d(grid, observations, t_scale, k_kernel_arr, dx,
+                          log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel='gaussian')
+	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
+	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
+	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
+
+# kde with histograms
+def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
+                            log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = compute_kde_binned_fft(x=grid, observations=observations, norm_scale=t_scale, dx=dx)
+	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
+	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
+	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
+
+def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
+	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
+	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx * dx
+	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
+
 
 # TODO change k_pdf into explicit Gaussian computation
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
@@ -252,7 +311,7 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 									np.max(alpha_grid))
 	matcher = match_x_to_grid_and_val_1d if ndim == 1 else match_x_to_grid_and_val_2d
 	if sampling_method == 'standard':
-		start = time.perf_counter()
+		# start = time.perf_counter()
 		if ndim == 1 and kernel == 'gaussian':
 			k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
 			l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
@@ -267,10 +326,10 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 			vals = np.zeros((n_samples, 2))
 		else:
 			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
-		end = time.perf_counter()
-		print(f"creating samplers take: {1000*(end-start):.3f} ms")
+		# end = time.perf_counter()
+		# print(f"creating samplers take: {1000*(end-start):.3f} ms")
 
-		start = time.perf_counter()
+		# start = time.perf_counter()
 		for i in range(n_samples):
 
 			reject = True
@@ -287,8 +346,8 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 					reject = False
 			if verbose and (1+i) % display_every == 0:
 				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
-		end = time.perf_counter()
-		print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
+		# end = time.perf_counter()
+		# print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
 
 	elif sampling_method == 'is':
 		alpha_func_interpolator = partial(matcher, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
@@ -297,5 +356,33 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		raise ValueError("sampling_method must be either 'standard' or 'is'")
 	return vals
 
-def sample_led_kde_fast(n_samples, observations, grid, t_kernel, t_sampler, k_kernel, k_sampler, alpha_log_eps=1e-10, alpha_denom_eps=1e-3):
-	pass
+# reproduces the function above, but blocks that are repeated often in many runs are taken outside
+def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
+                              t_sampler, k_kernel_arr, k_sampler, dx,
+                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
+                              interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
+                              matcher_fn=match_x_to_grid_and_val_1d):
+	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
+                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
+                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
+	if np.max(alpha_grid) > 1.01:
+		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
+									np.max(alpha_grid))
+	vals = np.zeros(n_samples)
+	N = len(observations)
+	for i in range(n_samples):
+		reject = True
+		while reject:
+			I = np.random.randint(N)
+			u = t_sampler()
+			w = k_sampler()
+			R = np.random.uniform()
+			X = observations[I] - u - w
+
+			alph_val = matcher_fn(X, grid, alpha_grid,
+			                                interpolation=interpolation)  # technically it works with 2D but not super well
+			if R < alph_val:
+				vals[i] = X
+				reject = False
+
+	return vals

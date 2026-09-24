@@ -9,185 +9,17 @@ import os
 
 # other parts of the project
 import distributions
-from tools import (sample_via_importance_resampling, kl_divergence_observations, support_width,
-                   StrangeAlphaException, print_statistics, run_dimension_consistency_check)
-from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott, compute_kde_2d
+from tools import (sample_via_importance_resampling, support_width,
+                   StrangeAlphaException, print_statistics, run_dimension_consistency_check, exact_gaussian_1d)
+from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott, compute_kde_2d, sample_led_kde_direct_raw
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
+from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
+                       run_recurrent_led_with_data_retaining, run_recurrent_led_with_data_forgetting_2d)
 
-q_dist = stats.norm(loc=0, scale=5)
-
-# TODO: separate 1d and 2d
-
-# they are not very well adapted to ndim > 1, to be changed
-descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
-                         'max___density': np.max, 'max': np.max, 'support_width': support_width}
-comparative_functions = {'kl_d': kl_divergence_observations}
-# I'm not really using comparative metrics given that it appears to change shape a lot for anything apart from a simple Gaussian
-
-def custom_proposal_pdf(x):
-	return q_dist.pdf(x)
-
-def custom_proposal_sampler(n):
-	return q_dist.rvs(size=n)
-
-# these two can be put under some common function or a class where only the core is going to be changed
-def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid, 
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
-	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
-	"""
-
-	n_trials : int
-	starting_dist : a function that computes density value
-	grid : a grid of values on which we will evaluate densities
-
-	"""
-
-	current_dist = starting_dist 
-
-	all_dists = []
-	statistics = []
-
-	for i in range(n_trials):
-		# first sample through IS
-		# then use this IS to compute new distribution with KDE
-		# TODO to rethink the order, the first one is kind of redundant, I think ?
-
-		samples_from_current_pdf, ess = sample_via_importance_resampling(
-			target_pdf=current_dist, 
-			proposal_pdf=custom_proposal_pdf,
-			proposal_sampler=custom_proposal_sampler,
-			n_candidates=n_candidates, n_samples=n_samples)
-
-		kde_from_samples = compute_kde(x=grid, observations=samples_from_current_pdf,
-		                               norm_scale=kde_scale)  # produces values of kde on grid, inferred from samples_from_current_pdf
-
-		all_dists.append(kde_from_samples)
-
-		current_dist = kde_sampled_pdf_func(grid=grid, kde=kde_from_samples) # a function that will be put in the sampler in the next round
-		stat = print_statistics(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq)
-		statistics.append(stat)
-
-	if return_final_samples:
-		return (samples_from_current_pdf, np.asarray(all_dists, dtype=float), statistics)
-	return np.asarray(all_dists, dtype=float), statistics
 
 def run_recurrent_kde_with_retaining(**kwargs):
 	raise NotImplementedError("KDE with retaining not implemented yet")
 
-# TODO instead of doing so many checks for dimensions inside you should rather write two different variants, one for 1d and one for 2d
-def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
-	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
-	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=False, ndim=1,
-    sampling_method='standard', interpolation=True, alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
-                                          debug=False):
-	"""
-
-	grid:
-	"""
-	all_pdfs = []
-	statistics = []
-	additional_info = None
-
-	obs = initial_observations
-	if scale_is_variance:
-		t_scale = np.sqrt(t_scale)
-		kde_scale = np.sqrt(kde_scale)
-
-	t0 = datetime.datetime.now()
-	# TODO move precomputing kernel for \alpha here
-	print("about to starting sampling")
-	for i in range(n_trials):
-
-		try:
-			led_samples = sample_led_kde(
-							n_samples=n_samples,
-							observations=obs,
-							grid=grid,
-							t_scale=t_scale,
-							k_scale=kde_scale,
-							verbose=verbose,
-							alpha_filter_denom=alpha_filter_denom,
-							kernel=kernel,
-							sampling_method=sampling_method,
-							debug=debug,
-							interpolation=interpolation,
-							alpha_denom_eps=alpha_denom_eps,
-							alpha_log_eps=alpha_log_eps,
-							)
-		except StrangeAlphaException as err:
-			print(f"Iteration {i}")
-			if additional_info is None:
-				additional_info = {"strange_alpha": err.alpha_value}
-			if i > 100:
-				print("we will proceed with saving the results anyway")
-			break
-		if ndim == 1:
-			local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
-		elif ndim == 2:
-			bandwidth = 1/len(led_samples)**(1/6)
-			local_led_pdf = compute_kde_2d(x=grid, observations=led_samples, variance=bandwidth, keep_shape=True)
-		all_pdfs.append(local_led_pdf)
-
-		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
-		statistics.append(stat)
-		obs = led_samples
-
-	t1 = datetime.datetime.now()
-	if additional_info is None:
-		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
-	else:
-		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
-	if return_final_samples:
-		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
-	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
-
-def run_recurrent_led_with_data_retaining(n_trials, initial_observations, grid, t_scale=0.02,
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
-	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
-	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=True,
-    sampling_method='standard'):
-
-	all_pdfs = []
-	statistics = []
-	additional_info = None
-
-	all_obs = initial_observations
-	if scale_is_variance:
-		t_scale = np.sqrt(t_scale)
-		kde_scale = np.sqrt(kde_scale)
-
-	t0 = datetime.datetime.now()
-	for i in range(n_trials):
-
-		led_samples = sample_led_kde(
-			n_samples=n_samples,
-			observations=all_obs,
-			grid=grid,
-			t_scale=t_scale,
-			k_scale=kde_scale,
-			verbose=verbose,
-			alpha_filter_denom=alpha_filter_denom,
-			kernel=kernel,
-			sampling_method=sampling_method,
-			debug=False,
-		)
-
-		all_obs = np.concatenate([all_obs, led_samples])
-		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
-		all_pdfs.append(local_led_pdf)
-		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq)
-		statistics.append(stat)
-
-	t1 = datetime.datetime.now()
-	if additional_info is None:
-		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
-	else:
-		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
-
-	return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 
 if __name__ == '__main__':
 	# TODO add help arguments
@@ -211,7 +43,14 @@ if __name__ == '__main__':
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
 	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
 	parser.add_argument("--with_fft_cutoff",
-						action=argparse.BooleanOptionalAction, default=False, help="experimental, don't touch")
+						action=argparse.BooleanOptionalAction, default=False,
+						help="allows to use smaller kernel array in Gaussian computations. "
+						     "Empirically, it does not seem to influence much, except for very dense grids, "
+						     "for grid_size = 1000 and n_samples = 1e4 on my machine we gain 0.5-1 second per 25 trials."
+						     "The effect is negligible for grid_size = 500, or even grid_size=1000 and n_samples=1e3")
+	parser.add_argument("--fast", action=argparse.BooleanOptionalAction, default=False,
+	                    help="use FFT-binning to compute KDE. Use with caution as it is approximation, not the exact computation."
+	                         "For 25 trials, n_samples = 1e4, grid_size = 1000 it wins 4-5 seconds")
 	parser.add_argument("--seed", type=int)
 
 	# only relevant for retrieving past experiments
@@ -265,12 +104,13 @@ if __name__ == '__main__':
 						action=argparse.BooleanOptionalAction, default=False) # probably deprecated
 	parser.add_argument("--n_candidates", default=10000, type=int,
 						help="useful for KDE, ignored for everything else. Number of candidates in the standard IS scheme")
-	parser.add_argument("--n_samples", default=10000, type=int,
+	parser.add_argument("--n_samples", default=1000, type=int,
 						help="Number of samples chosen each round. Choose a small value if method = led_retains")
 	parser.add_argument("--n_init_samples", default=1000, type=int,
 						help="number of initial samples, only relevant for data retaining scheme")
 
 	# arguments related to logging
+	parser.add_argument("--log_results", action=argparse.BooleanOptionalAction, default=True)
 	parser.add_argument("--verbosity_freq", default=25, type=int)
 	parser.add_argument("--dump_intermediary_dist", action=argparse.BooleanOptionalAction, default=False)
 	parser.add_argument("--track_git",
@@ -311,14 +151,15 @@ if __name__ == '__main__':
 	run_kwargs = dict(
 		n_trials=args.n, 
 		grid=grid, 
-		kde_scale=args.k_scale,
-		scale_is_variance=args.scale_is_variance,
+		k_scale=args.k_scale,
 		verbosity_freq=args.verbosity_freq,
 		return_final_samples=True,
-		n_candidates=args.n_candidates,
 		n_samples=args.n_samples,
-		kernel=args.kernel)
+		kernel=args.kernel,
+		fast=args.fast)
 
+	if args.fast:
+		print("Warning, we are going to use the binning approximation of KDE. The results may be inexact.")
 	if args.dist_type == 'gaussian' and dim == 1:
 		true_mixture = distributions.GaussianMixture(
 			centers=args.centers,
@@ -342,7 +183,8 @@ if __name__ == '__main__':
 			weights=args.weights
 		)
 
-	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}")
+	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}, "
+	      f"grid_size: {args.grid_size}, n of trials: {args.n}")
 	if args.method == 'kde':
 		true_samples = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
@@ -353,17 +195,21 @@ if __name__ == '__main__':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
 			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
-
+		radius = 60 * args.k_scale if args.with_fft_cutoff else None
 		run_kwargs.update(dict(
 			t_scale=args.t_scale,
+			dx=grid[1]-grid[0],
+			grid_size=args.grid_size,
 			initial_observations=init_obs,
-			alpha_filter_denom=args.alpha_filter_denom,
 			alpha_log_eps=args.alpha_log_eps,
 			alpha_denom_eps=args.alpha_denom_eps,
-			sampling_method=args.sampling_method,
-			interpolation=args.with_interpolation,
-			ndim=dim))
-		final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
+			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
+			radius=radius))
+
+		if dim == 1:
+			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_1d(**run_kwargs)
+		else:
+			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_2d(**run_kwargs)
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
 
@@ -375,14 +221,88 @@ if __name__ == '__main__':
 		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining(**run_kwargs)
 
 	args_dict['new_info'] = new_info
-	print(f"Time passed: {new_info['time_in_seconds']:.4f} seconds")
+	print(f"Time passed from t0 to t1: {new_info['time_in_seconds']:.4f} seconds.")
+
+	# t0 is defined as the moment after all the preparations are done. "
+	# t1 is defined as the moment right after the final sampling step is done, see t0 and t1 inside run_recurrent_...\n\n")
 	init_dist = true_mixture.pdf(grid)
-	log_results(all_distributions=all_dist,
-	            statistics=stat,
-	            results_dirpath="results",
-	            results_filepath=res_filepath,
-	            params=args_dict,
-	            init_dist=init_dist,
-	            simulation_step=args.gif_simulation_step,
-	            grid=grid,
-	            ndim=dim)
+	if args.log_results:
+		log_results(all_distributions=all_dist,
+		            statistics=stat,
+		            results_dirpath="results",
+		            results_filepath=res_filepath,
+		            params=args_dict,
+		            init_dist=init_dist,
+		            simulation_step=args.gif_simulation_step,
+		            grid=grid,
+		            ndim=dim)
+
+
+# OLD
+def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
+	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
+	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=False, ndim=1,
+    sampling_method='standard', interpolation=True, alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
+                                          debug=False):
+	"""
+
+	grid:
+	"""
+	all_pdfs = []
+	statistics = []
+	additional_info = None
+
+	obs = initial_observations
+	if scale_is_variance:
+		t_scale = np.sqrt(t_scale)
+		kde_scale = np.sqrt(kde_scale)
+
+	t0 = datetime.datetime.now()
+	# TODO move precomputing kernel for \alpha here
+
+	print("about to starting sampling")
+	for i in range(n_trials):
+
+		try:
+			led_samples = sample_led_kde(
+							n_samples=n_samples,
+							observations=obs,
+							grid=grid,
+							t_scale=t_scale,
+							k_scale=kde_scale,
+							verbose=verbose,
+							alpha_filter_denom=alpha_filter_denom,
+							kernel=kernel,
+							sampling_method=sampling_method,
+							debug=debug,
+							interpolation=interpolation,
+							alpha_denom_eps=alpha_denom_eps,
+							alpha_log_eps=alpha_log_eps,
+							)
+		except StrangeAlphaException as err:
+			print(f"Iteration {i}")
+			if additional_info is None:
+				additional_info = {"strange_alpha": err.alpha_value}
+			if i > 100:
+				print("we will proceed with saving the results anyway")
+			break
+		if ndim == 1:
+			local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
+		elif ndim == 2:
+			bandwidth = 1/len(led_samples)**(1/6)
+			local_led_pdf = compute_kde_2d(x=grid, observations=led_samples, variance=bandwidth, keep_shape=True)
+		all_pdfs.append(local_led_pdf)
+
+		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
+		statistics.append(stat)
+		obs = led_samples
+
+	t1 = datetime.datetime.now()
+	if additional_info is None:
+		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
+	else:
+		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
+	if return_final_samples:
+		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
+	return np.asarray(all_pdfs, dtype=float), statistics, additional_info

@@ -32,7 +32,7 @@ class TestKDE(unittest.TestCase):
 		compute_led_kde(x, obs, 0.01, k_pdf)
 
 class TestMatching(unittest.TestCase):
-	def test_matching_1d(self, grid_size=101):
+	def test_matching_1d_shapes(self, grid_size=101):
 		x = np.linspace(-5, 5, grid_size)
 		y = np.power(x, 2)
 		u = np.random.uniform(low=-5, high=5, size=grid_size)
@@ -50,8 +50,15 @@ class TestMatching(unittest.TestCase):
 		except ValueError:
 			pass
 
+	def test_matching_1d_value(self, grid_size=101):
+		x = np.linspace(-5, 5, grid_size)
+		y = np.power(x, 2)
 		res = match_x_to_grid_and_val_1d(1.23, grid=x, values_grid=y, interpolation=False)
 		self.assertAlmostEqual(res, 1.2**2)
+
+		propx = np.array([0.53, 0.74, 0.88, 1.23])
+		res = match_x_to_grid_and_val_1d(propx, grid=x, values_grid=y, interpolation=True)
+		self.assertTrue(np.allclose(res, np.array([0.2533, 0.496 , 0.6536, 1.4475])))
 
 	# I abandoned the routing
 	# def test_matching_routing(self):
