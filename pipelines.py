@@ -47,7 +47,7 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_and_val_1d
+				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_and_val_1d, ndim=1
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")
@@ -93,7 +93,7 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=match_x_to_grid_and_val_2d
+				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=match_x_to_grid_and_val_2d, ndim=2
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")

@@ -141,9 +141,11 @@ if __name__ == '__main__':
 	dim = run_dimension_consistency_check(args)
 	if dim == 1:
 		grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
+		dx = grid[1] - grid[0]
 	else:
 		print("detected two dimensions. Note that this path is still experimental")
 		grid_x, grid_y = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size), np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
+		dx = grid_x[1] - grid_x[0]
 		grid = np.meshgrid(grid_x, grid_y)
 		grid = np.dstack(grid)
 
@@ -195,10 +197,10 @@ if __name__ == '__main__':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
 			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
-		radius = 60 * args.k_scale if args.with_fft_cutoff else None
+		radius = 60 * args.k_scale if args.with_fft_cutoff or dim == 2 else None
 		run_kwargs.update(dict(
 			t_scale=args.t_scale,
-			dx=grid[1]-grid[0],
+			dx=dx,
 			grid_size=args.grid_size,
 			initial_observations=init_obs,
 			alpha_log_eps=args.alpha_log_eps,

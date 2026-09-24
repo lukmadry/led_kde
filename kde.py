@@ -361,14 +361,14 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
                               interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
-                              matcher_fn=match_x_to_grid_and_val_1d):
+                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
 	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
                                t_scale=t_scale, k_kernel_arr=k_kernel_arr,
                                log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
 	if np.max(alpha_grid) > 1.01:
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 									np.max(alpha_grid))
-	vals = np.zeros(n_samples)
+	vals = np.zeros(n_samples) if ndim == 1 else np.zeros((n_samples, 2))
 	N = len(observations)
 	for i in range(n_samples):
 		reject = True
