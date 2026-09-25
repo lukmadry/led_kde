@@ -144,7 +144,7 @@ def match_x_to_grid_and_val_1d(x, grid, values_grid,
 		raise ValueError("x contains elements outside of grid bounds")
 
 	idx = np.array( (x - grid_min) / grid_step, dtype=np.int32)
-	idx = np.clip(idx, 0, len(grid) - 1)
+	idx = np.clip(idx, 0, len(grid) - 2) # this is not optimal, but in our cases of interest \alpha is zero at the edges
 
 	if interpolation: # to be checked, maybe write a test
 		weights = x - grid[idx]
@@ -174,7 +174,7 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 # 		raise NotImplementedError("x has to be one or two-dimensional")
 
 def compute_gaussian_kernel_1d(radius, dx, var):
-	vals = np.arange(-radius, radius, step=dx)
+	vals = np.arange(-radius, radius + 0.5 * dx, step=dx)
 	return exact_gaussian_1d(vals, var)
 
 def compute_kernel_2d(grid, radius, var, func, ret_ds=False):

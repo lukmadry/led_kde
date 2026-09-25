@@ -14,7 +14,7 @@ from tools import (sample_via_importance_resampling, support_width,
 from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott, compute_kde_2d, sample_led_kde_direct_raw
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
-                       run_recurrent_led_with_data_retaining, run_recurrent_led_with_data_forgetting_2d)
+                       run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d)
 
 
 def run_recurrent_kde_with_retaining(**kwargs):
@@ -51,6 +51,10 @@ if __name__ == '__main__':
 	parser.add_argument("--fast", action=argparse.BooleanOptionalAction, default=False,
 	                    help="use FFT-binning to compute KDE. Use with caution as it is approximation, not the exact computation."
 	                         "For 25 trials, n_samples = 1e4, grid_size = 1000 it wins 4-5 seconds")
+	parser.add_argument("--fast_is", action=argparse.BooleanOptionalAction, default=False,
+	                    help="activates parallelized importance sampling in LED. However I'm not really an expert on importance sampling, "
+	                         "so I'm not sure how to run a diagnosis to make sure that it is correct. I will try to run empirical"
+	                         "tests, but I cannot do much more. This is the reason why I'm leaving this as an option.")
 	parser.add_argument("--seed", type=int)
 
 	# only relevant for retrieving past experiments
@@ -97,7 +101,7 @@ if __name__ == '__main__':
 						choices=['gaussian', 'uniform'], help="kernel for LED-KDE. ")
 	parser.add_argument("--sampling_method", default='standard',
 						choices=['standard', 'is'], help="sampling method for LED-KDE. Stick to standard, "
-														 "IS was for debugging")
+														 "IS was for debugging. Deprecated")
 	parser.add_argument("--t_scale", default=0.02, type=float)
 	parser.add_argument("--k_scale", default=0.04, type=float)
 	parser.add_argument("--scale_is_variance",
@@ -143,7 +147,6 @@ if __name__ == '__main__':
 		grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
 		dx = grid[1] - grid[0]
 	else:
-		print("detected two dimensions. Note that this path is still experimental")
 		grid_x, grid_y = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size), np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
 		dx = grid_x[1] - grid_x[0]
 		grid = np.meshgrid(grid_x, grid_y)
@@ -160,8 +163,10 @@ if __name__ == '__main__':
 		kernel=args.kernel,
 		fast=args.fast)
 
-	if args.fast:
-		print("Warning, we are going to use the binning approximation of KDE. The results may be inexact.")
+	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast}\n"
+	                    f"FFT with cutoff in the kernel (if 2D, False here is overridden): {args.with_fft_cutoff}\n"
+	                    f"Vectorised importance sampling (1D only): {args.fast_is}\n")
+	print(setup_message)
 	if args.dist_type == 'gaussian' and dim == 1:
 		true_mixture = distributions.GaussianMixture(
 			centers=args.centers,
@@ -187,6 +192,17 @@ if __name__ == '__main__':
 
 	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}, "
 	      f"grid_size: {args.grid_size}, n of trials: {args.n}")
+	radius = 60 * args.k_scale if args.with_fft_cutoff or dim == 2 else None
+	if args.method.startswith('led'):
+		run_kwargs.update(dict(
+			t_scale=args.t_scale,
+			dx=dx,
+			grid_size=args.grid_size,
+			alpha_log_eps=args.alpha_log_eps,
+			alpha_denom_eps=args.alpha_denom_eps,
+			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
+			led_is=args.fast_is))
+
 	if args.method == 'kde':
 		true_samples = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
@@ -197,17 +213,7 @@ if __name__ == '__main__':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
 			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
-		radius = 60 * args.k_scale if args.with_fft_cutoff or dim == 2 else None
-		run_kwargs.update(dict(
-			t_scale=args.t_scale,
-			dx=dx,
-			grid_size=args.grid_size,
-			initial_observations=init_obs,
-			alpha_log_eps=args.alpha_log_eps,
-			alpha_denom_eps=args.alpha_denom_eps,
-			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
-			radius=radius))
-
+		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
 		if dim == 1:
 			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_1d(**run_kwargs)
 		else:
@@ -215,12 +221,8 @@ if __name__ == '__main__':
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
 
-		run_kwargs.update(dict(
-			t_scale=args.t_scale,
-			initial_observations=init_obs,
-			alpha_filter_denom=args.alpha_filter_denom,
-			sampling_method=args.sampling_method,))
-		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining(**run_kwargs)
+		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
+		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
 
 	args_dict['new_info'] = new_info
 	print(f"Time passed from t0 to t1: {new_info['time_in_seconds']:.4f} seconds.")
@@ -238,73 +240,3 @@ if __name__ == '__main__':
 		            simulation_step=args.gif_simulation_step,
 		            grid=grid,
 		            ndim=dim)
-
-
-# OLD
-def run_recurrent_led_kde_with_forgetting(n_trials, initial_observations, grid, t_scale=0.02,
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False, kernel='gaussian',
-	descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'], comparative_metrics=['kl_d'],
-	verbose=True, verbosity_freq=10, return_final_samples=False, alpha_filter_denom=False, ndim=1,
-    sampling_method='standard', interpolation=True, alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
-                                          debug=False):
-	"""
-
-	grid:
-	"""
-	all_pdfs = []
-	statistics = []
-	additional_info = None
-
-	obs = initial_observations
-	if scale_is_variance:
-		t_scale = np.sqrt(t_scale)
-		kde_scale = np.sqrt(kde_scale)
-
-	t0 = datetime.datetime.now()
-	# TODO move precomputing kernel for \alpha here
-
-	print("about to starting sampling")
-	for i in range(n_trials):
-
-		try:
-			led_samples = sample_led_kde(
-							n_samples=n_samples,
-							observations=obs,
-							grid=grid,
-							t_scale=t_scale,
-							k_scale=kde_scale,
-							verbose=verbose,
-							alpha_filter_denom=alpha_filter_denom,
-							kernel=kernel,
-							sampling_method=sampling_method,
-							debug=debug,
-							interpolation=interpolation,
-							alpha_denom_eps=alpha_denom_eps,
-							alpha_log_eps=alpha_log_eps,
-							)
-		except StrangeAlphaException as err:
-			print(f"Iteration {i}")
-			if additional_info is None:
-				additional_info = {"strange_alpha": err.alpha_value}
-			if i > 100:
-				print("we will proceed with saving the results anyway")
-			break
-		if ndim == 1:
-			local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
-		elif ndim == 2:
-			bandwidth = 1/len(led_samples)**(1/6)
-			local_led_pdf = compute_kde_2d(x=grid, observations=led_samples, variance=bandwidth, keep_shape=True)
-		all_pdfs.append(local_led_pdf)
-
-		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i, verbosity_freq)
-		statistics.append(stat)
-		obs = led_samples
-
-	t1 = datetime.datetime.now()
-	if additional_info is None:
-		additional_info = {'time_in_seconds' : (t1 - t0).total_seconds()}
-	else:
-		additional_info.update({"time_in_seconds": (t1-t0).total_seconds()})
-	if return_final_samples:
-		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
-	return np.asarray(all_pdfs, dtype=float), statistics, additional_info

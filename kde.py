@@ -274,8 +274,7 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose= False, display_every=20, kernel='gaussian',
 				   alpha_filter_denom=True, interpolation=True, alpha_log_eps=1e-10,
-                   alpha_denom_eps=1e-3,
-				   sampling_method='standard', debug=False, alpha_grid=None):
+                   alpha_denom_eps=1e-3, debug=False, alpha_grid=None):
 	"""
 	Samples observations with the LED-KDE method. If a parameter shares the name with one in alpha_func,
 	it is identical to the description there and we will not repeat it here.
@@ -310,50 +309,43 @@ def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 									np.max(alpha_grid))
 	matcher = match_x_to_grid_and_val_1d if ndim == 1 else match_x_to_grid_and_val_2d
-	if sampling_method == 'standard':
-		# start = time.perf_counter()
-		if ndim == 1 and kernel == 'gaussian':
-			k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
-			l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
-			vals = np.zeros(n_samples)
-		elif ndim == 1 and kernel == 'uniform':
-			k_sampler = uniform(scale=k_scale).rvs
-			l_sampler = uniform(scale=t_scale).rvs
-			vals = np.zeros(n_samples)
-		elif ndim == 2:
-			k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
-			l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
-			vals = np.zeros((n_samples, 2))
-		else:
-			raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
-		# end = time.perf_counter()
-		# print(f"creating samplers take: {1000*(end-start):.3f} ms")
-
-		# start = time.perf_counter()
-		for i in range(n_samples):
-
-			reject = True
-			while reject:
-				I = np.random.randint(N)
-				u = l_sampler()
-				w = k_sampler()
-				R = np.random.uniform()
-				X = observations[I] - u - w
-
-				alph_val = matcher(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
-				if R < alph_val:
-					vals[i] = X
-					reject = False
-			if verbose and (1+i) % display_every == 0:
-				print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
-		# end = time.perf_counter()
-		# print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
-
-	elif sampling_method == 'is':
-		alpha_func_interpolator = partial(matcher, grid=grid_pos, values_grid=alpha_grid, interpolation=True)
-		vals, _ = sample_via_importance_resampling(target_pdf=alpha_func_interpolator, n_samples=n_samples)
+	# start = time.perf_counter()
+	if ndim == 1 and kernel == 'gaussian':
+		k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
+		l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
+		vals = np.zeros(n_samples)
+	elif ndim == 1 and kernel == 'uniform':
+		k_sampler = uniform(scale=k_scale).rvs
+		l_sampler = uniform(scale=t_scale).rvs
+		vals = np.zeros(n_samples)
+	elif ndim == 2:
+		k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
+		l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
+		vals = np.zeros((n_samples, 2))
 	else:
-		raise ValueError("sampling_method must be either 'standard' or 'is'")
+		raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
+	# end = time.perf_counter()
+	# print(f"creating samplers take: {1000*(end-start):.3f} ms")
+
+	# start = time.perf_counter()
+	for i in range(n_samples):
+
+		reject = True
+		while reject:
+			I = np.random.randint(N)
+			u = l_sampler()
+			w = k_sampler()
+			R = np.random.uniform()
+			X = observations[I] - u - w
+
+			alph_val = matcher(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
+			if R < alph_val:
+				vals[i] = X
+				reject = False
+		if verbose and (1+i) % display_every == 0:
+			print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
+	# end = time.perf_counter()
+	# print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
 	return vals
 
 # reproduces the function above, but blocks that are repeated often in many runs are taken outside
@@ -386,3 +378,28 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
 				reject = False
 
 	return vals
+
+# faster variant, to be tested if it gives the same exact thing
+def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
+                              t_sampler, k_kernel_arr, k_sampler, dx,
+                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
+                              interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
+                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
+	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
+                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
+                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
+	if np.max(alpha_grid) > 1.01:
+		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
+									np.max(alpha_grid))
+	N = len(observations)
+	n_candidates = 10*n_samples
+	u = t_sampler(size=n_candidates)
+	w = k_sampler(size=n_candidates)
+	idx = np.random.randint(low=0,high=N,size=n_candidates)
+	X = observations[idx] - u - w
+	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=interpolation)
+	alph_weights /= np.sum(alph_weights)
+	resampled_indices = np.random.choice(
+		n_candidates, size=n_samples, replace=True, p=alph_weights
+	)
+	return X[resampled_indices]
