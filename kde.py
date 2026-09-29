@@ -229,8 +229,6 @@ def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps
 	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx * dx
 	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
 
-
-# TODO change k_pdf into explicit Gaussian computation
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
 	k_log_ql_conv = convolve_continuous_grid(k_pdf, np.log(eps+q_L_approx), grid)
@@ -238,8 +236,6 @@ def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	Z = np.sum(expklog) * (grid[1] - grid[0])
 	return expklog / Z
 
-# TODO give the possibility to pass different kernels
-# TODO speed up the convolution computation
 def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
                        dimensions_for_grid=None):
 	if len(pts_list.shape) > 2:
@@ -270,7 +266,6 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	return expklog / Z
 
 # TODO method: standard does not work very well with 2D. Maybe it's possible to fix.
-# TODO add the possibility of precomputing the kernel, no need to recompute it every time
 def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
 				   verbose= False, display_every=20, kernel='gaussian',
 				   alpha_filter_denom=True, interpolation=True, alpha_log_eps=1e-10,

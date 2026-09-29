@@ -2,19 +2,15 @@ import numpy as np
 from scipy import stats
 
 import datetime
-import argparse
-
-# only necessary for logging
-import os
 
 # other parts of the project
-import distributions
 from tools import (sample_via_importance_resampling, support_width,
-                   StrangeAlphaException, print_statistics, match_x_to_grid_and_val_1d, exact_gaussian_1d,
+                   StrangeAlphaException, match_x_to_grid_and_val_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d)
-from kde import (compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott,
+from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
+from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
@@ -25,11 +21,17 @@ def update_forgetting(old_obs, new_obs):
 def update_retaining(old_obs, new_obs):
 	return np.concatenate([old_obs, new_obs], axis=0)
 
-# kernel is always gaussian, maybe this can be changed, I'd like to avoid feature creep
 def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                          fast, led_is, update_fn):
+                          fast, led_is, update_fn, print_fn, verbose):
+	"""
+	internal function for pipelines.
+
+	See run_recurrent_led_with_data_forgetting_1d and run_recurrent_led_with_data_retaining_1d which are actual interfaces
+	for this function for the docstring.
+
+	"""
 	all_pdfs = []
 	statistics = []
 	additional_info = {}
@@ -42,6 +44,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale)
 	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_fast_approx_1d
 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
+	pbar_length = max(100, int(n_trials / verbosity_freq))
 	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 		try:
@@ -63,34 +66,91 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 		local_led_pdf = compute_kde_scott(x=grid, observations=obs)
 		all_pdfs.append(local_led_pdf)
 
-		stat = print_statistics(local_led_pdf, obs, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq)
+		stat = print_fn(local_led_pdf, obs, descriptive_metrics, descriptive_functions, i,
+		                        verbosity_freq, verbose=verbose, n_samples=n_samples, grid=grid)
 		statistics.append(stat)
+
+		if not verbose:
+			print(build_progress_bar(i, n_trials, pbar_length), end="\r")
+
 	t1 = datetime.datetime.now() # my IDE complains about duplication but idk how to not be repetitive here
 	additional_info.update({"time_in_seconds": (t1 - t0).total_seconds()})
 	if return_final_samples:
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
+	print("\n\n")
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
 
 def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                          fast, led_is):
+                          fast, led_is, verbose):
+	"""
+	runs n_trials of data forgetting scheme with LED-KDE.
 
+	some of the arguments are redundant, but this is because this is not supposed to be front-facing function, it's
+	called in run.py where we compute all of them
+
+	n_trials : int
+	initial_observations : np.ndarray 1-dimensional
+	grid : np.ndarray 1-dimensional, evenly spaced grid (this is not checked !)
+	dx : float, distance between grid points
+	grid_size : size of the grid
+	k_scale : float, variance of the external gaussian K
+	t_scale : float, variance of the internal gaussian L
+	n_samples : int, number of samples resampled at every step
+	descriptive_metrics : list of strings, keys of dictionary descriptive_functions. Can be :
+	  mean, sd, suppord_width, max, max___density
+    kernel : str, irrelevant for now (29/09)
+    radius : while creating kernel for convolution, its size will be capped at this value. If None then we will apply
+      kernel of the same size as grid
+    alpha_log_eps : float, epsilon to put in log in the computation of the \alpha value
+    alpha_denom_eps : float, epsilon to put in the denominator in computation of the \alpha value
+    return_final_samples : bool, if True returns samples of the final round.
+    verbosity_freq : int, verbosity frequency
+    fast : bool, if True will apply fast KDE (approximation by binning)
+    led_is : importance sampling adapted ot LED
+    verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
+	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                          fast, led_is, update_fn=update_forgetting)
+                          fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget)
 
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                          fast, led_is):
+                          fast, led_is, verbose):
+	"""
+	runs scheme with LED-KDE with data retaining.
 
+	some of the arguments are redundant, but this is because this is not supposed to be front-facing function, it's
+	called in run.py where we compute all of them
+
+	n_trials : int
+	initial_observations : np.ndarray 1-dimensional
+	grid : np.ndarray 1-dimensional, evenly spaced grid (this is not checked !)
+	dx : float, distance between grid points
+	grid_size : size of the grid
+	k_scale : float, variance of the external gaussian K
+	t_scale : float, variance of the internal gaussian L
+	n_samples : int, number of samples resampled at every step.
+	descriptive_metrics : list of strings, keys of dictionary descriptive_functions. Can be :
+	  mean, sd, suppord_width, max, max___density
+    kernel : str, (irrelevant for now 29/09)
+    radius : while creating kernel for convolution, its size will be capped at this value. If None then we will apply
+      kernel of the same size as grid
+    alpha_log_eps : float, epsilon to put in log in the computation of the \alpha value
+    alpha_denom_eps : float, epsilon to put in the denominator in computation of the \alpha value
+    return_final_samples : bool, if True returns samples of the final round.
+    verbosity_freq : int, verbosity frequency
+    fast : bool, if True will apply fast KDE (approximation by binning)
+    led_is : importance sampling adapted ot LED
+    verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
+	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                          fast, led_is, update_fn=update_retaining)
+                          fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain)
 
 def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
@@ -127,7 +187,7 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 		local_led_pdf = compute_kde_scott_2d(x=grid, observations=led_samples)
 		all_pdfs.append(local_led_pdf)
 
-		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
+		stat = print_statistics_for_1d_forget(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
 		                        verbosity_freq)
 		statistics.append(stat)
 		obs = led_samples
@@ -136,58 +196,6 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 	if return_final_samples:
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
-
-#
-# # this also to be reworked in a similar way
-# # TODO abstract it away somehow, the only difference is one line effectively
-# def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
-#                                              k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-#                                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-#                                              fast, led_is=True):
-# 	all_pdfs = []
-# 	statistics = []
-# 	additional_info = None
-#
-# 	all_obs = initial_observations
-# 	k_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * k_scale).rvs
-# 	t_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * t_scale).rvs
-#
-# 	_radius = grid_size * dx if radius is None else radius
-# 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale) # make it possible to change to sth else with arg kernel
-# 	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_fast_approx_1d
-# 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
-# 	t0 = datetime.datetime.now()
-# 	for i in range(n_trials):
-# 		try:
-# 			led_samples = sampler_fn(
-# 				n_samples=n_samples, observations=all_obs, grid=grid, t_scale=t_scale,
-# 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
-# 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-# 				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_and_val_1d, ndim=1
-# 			)
-# 		except StrangeAlphaException as err:
-# 			print(f"Iteration {i}")
-# 			if len(additional_info) == 0:
-# 				additional_info = {"strange_alpha": err.alpha_value}
-# 			if i > 100:
-# 				print("we will proceed with saving the results anyway")
-# 			break
-#
-# 		all_obs = np.concatenate([all_obs, led_samples])
-# 		local_led_pdf = compute_kde_scott(x=grid, observations=led_samples)
-# 		all_pdfs.append(local_led_pdf)
-# 		stat = print_statistics(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
-# 		                        verbosity_freq)
-# 		statistics.append(stat)
-#
-# 	t1 = datetime.datetime.now()
-# 	if additional_info is None:
-# 		additional_info = {'time_in_seconds': (t1 - t0).total_seconds()}
-# 	else:
-# 		additional_info.update({"time_in_seconds": (t1 - t0).total_seconds()})
-#
-# 	return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
-
 
 
 def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
@@ -231,8 +239,8 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 		all_dists.append(kde_from_samples)
 
 		current_dist = kde_sampled_pdf_func(grid=grid, kde=kde_from_samples) # a function that will be put in the sampler in the next round
-		stat = print_statistics(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq)
+		stat = print_statistics_for_1d_forget(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
+		                                    verbosity_freq)
 		statistics.append(stat)
 
 	if return_final_samples:

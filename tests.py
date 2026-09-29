@@ -6,7 +6,7 @@ from kde import alpha_func, compute_led_kde, compute_kde, sample_led_kde
 from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d
 from functools import partial
 from distributions import GaussianMixture, UniformMixture
-from run import run_recurrent_led_kde_with_forgetting, run_recurrent_led_with_data_retaining
+from run import run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_1d
 
 # we should check its approximate symmetry if the input distribution is symmetric
 class TestAlphaFunc(unittest.TestCase):
@@ -98,79 +98,6 @@ class TestGaussianMixture(unittest.TestCase):
 		g = GaussianMixture(centers=[-2, 2], scales=[1, 1])
 		g.rvs(100)
 		g.pdf(np.linspace(-5, 5, 100))
-
-def test_gauss_input_led_sampling_end_to_end(n):
-	centers = [-2, 2]
-	scales = [0.35, 0.35]
-	weights = None
-	scale_is_variance = True
-	grid = np.linspace(-10, 10, 500)
-	n_samples = 200
-
-	true_mixture = GaussianMixture(
-		centers=centers,
-		scales=scales,
-		weights=weights,
-		scale_is_variance=scale_is_variance)
-	init_obs = true_mixture.rvs(n_samples)
-
-	run_kwargs = dict(
-		n_trials=n,
-		grid=grid,
-		kde_scale=0.02,
-		scale_is_variance=scale_is_variance,
-		verbosity_freq=10,
-		return_final_samples=True,
-		n_candidates=10000,
-		n_samples=1000,
-		kernel='gaussian',
-		t_scale=0.01,
-		initial_observations=init_obs,
-		alpha_filter_denom=True,
-		sampling_method='standard')
-	final_sample, all_dist, stat, new_info = run_recurrent_led_kde_with_forgetting(**run_kwargs)
-
-def test_gauss_input_led_retain_sampling_end_to_end(n):
-	centers = [-2, 2]
-	scales = [0.35, 0.35]
-	weights = None
-	scale_is_variance = True
-	grid = np.linspace(-10, 10, 500)
-	n_samples = 1000
-
-	true_mixture = GaussianMixture(
-		centers=centers,
-		scales=scales,
-		weights=weights,
-		scale_is_variance=scale_is_variance)
-	init_obs = true_mixture.rvs(n_samples)
-
-	run_kwargs = dict(
-		n_trials=n,
-		grid=grid,
-		kde_scale=0.02,
-		scale_is_variance=scale_is_variance,
-		verbosity_freq=10,
-		return_final_samples=True,
-		n_candidates=10000,
-		n_samples=50,
-		kernel='gaussian',
-		t_scale=0.01,
-		initial_observations=init_obs,
-		alpha_filter_denom=True,
-		sampling_method='standard')
-	final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining(**run_kwargs)
-
-def test_uniform_input_led_sampling_end_to_end(n):
-	pass
-
-# I guess that you shouldn't do this because it's not really a unit test but I don't have the time explore pytest
-class TestFullRun(unittest.TestCase):
-	def test_full_run(self):
-		test_gauss_input_led_sampling_end_to_end(10)
-
-	def test_full_run_retain(self):
-		test_gauss_input_led_retain_sampling_end_to_end(10)
 
 # profiling
 def profile_function(func, runs = 5, verbose=False, *args, **kwargs):

@@ -1,0 +1,2 @@
+python3 run.py --n_init_samples 1000 --n_samples 250 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_retain --t_scale 0.0001 --k_scale 0.0002 --n 50 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_init_samples 1000 --n_samples 250 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_retain --t_scale 0.0001 --k_scale 0.0002 --n 50 --grid_size 1000 --fast_is --no-verbose

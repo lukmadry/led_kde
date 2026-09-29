@@ -1,5 +1,4 @@
 import numpy as np
-from scipy import stats
 
 import datetime
 import argparse
@@ -9,16 +8,10 @@ import os
 
 # other parts of the project
 import distributions
-from tools import (sample_via_importance_resampling, support_width,
-                   StrangeAlphaException, print_statistics, run_dimension_consistency_check, exact_gaussian_1d)
-from kde import compute_kde, kde_sampled_pdf_func, sample_led_kde, compute_kde_scott, compute_kde_2d, sample_led_kde_direct_raw
+from tools import support_width, run_dimension_consistency_check
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
                        run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d)
-
-
-def run_recurrent_kde_with_retaining(**kwargs):
-	raise NotImplementedError("KDE with retaining not implemented yet")
 
 
 if __name__ == '__main__':
@@ -38,8 +31,10 @@ if __name__ == '__main__':
 						action=argparse.BooleanOptionalAction, default=False,
 						help="if true alpha we will not add small eps to the denominator in alpha, but rather choose"
 							 "values where denominator is not zero. Don't touch if you don't know the code very well")
-	parser.add_argument("--alpha_log_eps", type=float, default=1e-10)
-	parser.add_argument("--alpha_denom_eps", type=float, default=1e-3)
+	parser.add_argument("--alpha_log_eps", type=float, default=1e-10,
+	                    help="technical parameter for numerical stability of log in the computation of alpha. Best not touch")
+	parser.add_argument("--alpha_denom_eps", type=float, default=1e-3,
+	                    help="technical parameter for numerical stability in denominator in the computation of alpha. Best not touch")
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
 	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
 	parser.add_argument("--with_fft_cutoff",
@@ -48,7 +43,7 @@ if __name__ == '__main__':
 						     "Empirically, it does not seem to influence much, except for very dense grids, "
 						     "for grid_size = 1000 and n_samples = 1e4 on my machine we gain 0.5-1 second per 25 trials."
 						     "The effect is negligible for grid_size = 500, or even grid_size=1000 and n_samples=1e3")
-	parser.add_argument("--fast", action=argparse.BooleanOptionalAction, default=False,
+	parser.add_argument("--fast_kde", action=argparse.BooleanOptionalAction, default=False,
 	                    help="use FFT-binning to compute KDE. Use with caution as it is approximation, not the exact computation."
 	                         "For 25 trials, n_samples = 1e4, grid_size = 1000 it wins 4-5 seconds")
 	parser.add_argument("--fast_is", action=argparse.BooleanOptionalAction, default=False,
@@ -91,14 +86,12 @@ if __name__ == '__main__':
 	parser.add_argument("--covariances", nargs='+', type=float)
 	parser.add_argument("--widths_x", nargs='+', type=float)
 	parser.add_argument("--widths_y", nargs='+', type=float)
-
 	parser.add_argument("--weights", nargs='+',
 						type=float, help="weights of mixtures. Has to be the same length as centers")
 
-
 	# kde or led-kde arguments
 	parser.add_argument("--kernel", default='gaussian',
-						choices=['gaussian', 'uniform'], help="kernel for LED-KDE. ")
+						choices=['gaussian', 'uniform'], help="kernel for LED-KDE. Not fully implemented yet")
 	parser.add_argument("--sampling_method", default='standard',
 						choices=['standard', 'is'], help="sampling method for LED-KDE. Stick to standard, "
 														 "IS was for debugging. Deprecated")
@@ -109,13 +102,14 @@ if __name__ == '__main__':
 	parser.add_argument("--n_candidates", default=10000, type=int,
 						help="useful for KDE, ignored for everything else. Number of candidates in the standard IS scheme")
 	parser.add_argument("--n_samples", default=1000, type=int,
-						help="Number of samples chosen each round. Choose a small value if method = led_retains")
+						help="Number of samples chosen each round. Choose a small value (~50, 100) if method = led_retains")
 	parser.add_argument("--n_init_samples", default=1000, type=int,
 						help="number of initial samples, only relevant for data retaining scheme")
 
 	# arguments related to logging
 	parser.add_argument("--log_results", action=argparse.BooleanOptionalAction, default=True)
-	parser.add_argument("--verbosity_freq", default=25, type=int)
+	parser.add_argument("--verbosity_freq", default=50, type=int)
+	parser.add_argument("--verbose", action=argparse.BooleanOptionalAction, default=True)
 	parser.add_argument("--dump_intermediary_dist", action=argparse.BooleanOptionalAction, default=False)
 	parser.add_argument("--track_git",
 						action=argparse.BooleanOptionalAction, default=True)
@@ -157,13 +151,14 @@ if __name__ == '__main__':
 		n_trials=args.n, 
 		grid=grid, 
 		k_scale=args.k_scale,
+		verbose=args.verbose,
 		verbosity_freq=args.verbosity_freq,
 		return_final_samples=True,
 		n_samples=args.n_samples,
 		kernel=args.kernel,
-		fast=args.fast)
+		fast=args.fast_kde)
 
-	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast}\n"
+	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel (if 2D, False here is overridden): {args.with_fft_cutoff}\n"
 	                    f"Vectorised importance sampling (1D only): {args.fast_is}\n")
 	print(setup_message)
@@ -225,7 +220,7 @@ if __name__ == '__main__':
 		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
 
 	args_dict['new_info'] = new_info
-	print(f"Time passed from t0 to t1: {new_info['time_in_seconds']:.4f} seconds.")
+	print(f"\nTime passed from t0 to t1: {new_info['time_in_seconds']:.4f} seconds.")
 
 	# t0 is defined as the moment after all the preparations are done. "
 	# t1 is defined as the moment right after the final sampling step is done, see t0 and t1 inside run_recurrent_...\n\n")

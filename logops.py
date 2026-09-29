@@ -8,6 +8,61 @@ import datetime
 import h5py
 
 from tools import get_git_commit_gitpython
+from kde import compute_kde_scott
+
+def build_progress_bar(i, M, length=50, p_sign='@'):
+	prop = int(float(i)/float(M)* length)
+	s = "[" + p_sign * prop + '_' * (length - prop) + "]" + f" {100*float(i/M):.2f}%"
+	return s
+
+# we may need some 2d version of this
+def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, func_dict,
+                                   i, verbosity_freq, verbose=True, prefix_stat=None, *args, **kwargs):
+	"""
+	Helper function used in the main pass to print statistics of the current distribution.
+
+	Return a dictionary with values of statistics of pdf and samples.
+
+	local_pdf : np.ndarray of pdf
+	local_samples : np.ndarray of samples
+	func_dict : dictionary of format str : Callable . If string ends with ___density then
+			Callable will be applied to local_pdf, if not it will be applied to local_samples
+	metrics : iterable with strings of metrics names. Has to be a subset of keys in func_dict
+	i : index to display
+	verbosity_freq : dictates verbosity, if 1+i is divisible by this value, will print descriptive statistics
+	"""
+	stat = {}
+	for s in metrics:
+		if s.endswith("___density"):
+			key = s.split("___")[0] + " of density"
+			val = func_dict[s](local_pdf)
+		else:
+			key = s
+			val = func_dict[s](local_samples)
+		if prefix_stat is not None:
+			key = prefix_stat + "___" + key
+		stat[key] = val
+
+	if verbose and (1 + i) % verbosity_freq == 0:
+		s = f"Trial nr: {1 + i}.\nDescriptive statistics: "
+		for key, val in stat.items():
+			s += f"{key}: {val:.3f} |"
+		s += "\n"
+		print(s)
+
+	return stat
+
+def print_statistics_for_1d_retain(local_pdf, local_samples, metrics, func_dict, i, verbosity_freq,
+                                   n_samples, grid, verbose):
+	new_stats = print_statistics_for_1d_forget(local_pdf, local_pdf, metrics, func_dict, i,
+	                                           verbosity_freq, verbose=verbose, prefix_stat="A_")
+	if n_samples > 50:
+		new_samples = local_samples[-n_samples:]
+		new_pdf = compute_kde_scott(x=grid, observations=local_samples)
+		gen_stats = print_statistics_for_1d_forget(new_pdf, new_samples, metrics, func_dict, i,
+		                                           verbosity_freq, verbose=verbose, prefix_stat="G_")
+		new_stats.update(gen_stats)
+	return new_stats
 
 def append_to_jsonl(filepath: str, new_record: dict) -> None:
 	with open(filepath, mode="a", encoding="utf-8") as f:
@@ -28,6 +83,7 @@ def log_results(all_distributions,
 	a) a plot of initial and final distribution
 	b) a GIF of distribution evolution
 	c) plots of descriptive statistics of all distributions (depending on what was collected)
+
 	"""
 	dtime_sting = datetime.datetime.now().strftime("%d_%B_%Y_%I:%M%p")
 	log_dir = os.path.join(results_dirpath, dtime_sting)
@@ -43,7 +99,7 @@ def log_results(all_distributions,
 	with open(os.path.join(log_dir, "kwargs.json"), "w") as f:
 		json.dump(params, f)
 
-	print("saving statistics logs")
+	print("saving statistics logs") # are we going to save them the same when sampling new stuff ?
 	stat_names = list(statistics[0].keys())
 	Ns = len(statistics)
 	stat_unrolled = {key: [] for key in stat_names}
@@ -57,7 +113,7 @@ def log_results(all_distributions,
 	height = square_root_int + addon
 	width = square_root_int + addon
 
-	fig_stat, axs_stat = plt.subplots(height, width, sharex=True, sharey=False)
+	fig_stat, axs_stat = plt.subplots(height, width, figsize=(10, 10), sharex=True, sharey=False)
 	fig_stat.suptitle(f"Plots of statistics of run {dtime_sting}")
 	for i, key in enumerate(stat_names):
 		ih = i // height
@@ -123,10 +179,12 @@ def log_results(all_distributions,
 			f.create_dataset("distribution_grids", all_distributions.shape, data=all_distributions)
 
 	print("Logs saved successfully")
+	print(f"Folder: {log_dir}\n")
 
 def log_results_2d():
 	pass
 
+# does not work very well will have to reworked
 PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'n_samples', 'n', 'dist_type']
 def find_datetime_with_this_params(desired_values, results_filepath,
                                    important_keys=PARAMETER_KEYS, full_agreement_keys=['method'],

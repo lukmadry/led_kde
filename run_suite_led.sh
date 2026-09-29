@@ -1,0 +1,6 @@
+python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 1000 --fast_is --no-verbose
+python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 1000 --fast_is --no-verbose

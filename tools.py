@@ -90,38 +90,6 @@ def _interpret_two_dim_grid(grid):
 		y = f_grid[:, 0, 1]
 	return f_grid, x, y
 
-# we may need some 2d version of this
-def print_statistics(local_pdf, local_samples, metrics, func_dict, i, verbosity_freq):
-	"""
-	Helper function used in the main pass to print statistics of the current distribution.
-
-	Return a dictionary with values of statistics of pdf and samples.
-
-	local_pdf : np.ndarray of pdf
-	local_samples : np.ndarray of samples
-	func_dict : dictionary of format str : Callable . If string ends with ___density then
-			Callable will be applied to local_pdf, if not it will be applied to local_samples
-	metrics : iterable with strings of metrics names. Has to be a subset of keys in func_dict
-	i : index to display
-	verbosity_freq : dictates verbosity, if 1+i is divisible by this value, will print descriptive statistics
-	"""
-	stat = {}
-	for s in metrics:
-		if s.endswith("___density"):
-			new_name = s.split("___")[0] + " of density"
-			stat[new_name] = func_dict[s](local_pdf)
-		else:
-			stat[s] = func_dict[s](local_samples)
-
-	if (1 + i) % verbosity_freq == 0:
-		s = f"Trial nr: {1 + i}.\nDescriptive statistics: "
-		for key, val in stat.items():
-			s += f"{key}: {val:.3f} |"
-		s += "\n"
-		print(s)
-
-	return stat
-
 # AI use : some (most) of these functions have been written with Gemini Flash
 def match_x_to_grid_and_val_1d(x, grid, values_grid,
 							raise_error_if_outside=False, interpolation=True):
