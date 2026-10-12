@@ -348,7 +348,7 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
                               interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
-                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
+                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1, *args, **kwargs):
 	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
                                t_scale=t_scale, k_kernel_arr=k_kernel_arr,
                                log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
@@ -377,7 +377,7 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
 # faster variant, to be tested if it gives the same exact thing
 def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
-                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
+                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,
                               interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
                               matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
 	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
@@ -387,7 +387,7 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 									np.max(alpha_grid))
 	N = len(observations)
-	n_candidates = 10*n_samples
+	n_candidates = cands_multiplier * n_samples
 	u = t_sampler(size=n_candidates)
 	w = k_sampler(size=n_candidates)
 	idx = np.random.randint(low=0,high=N,size=n_candidates)

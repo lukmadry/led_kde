@@ -5,7 +5,7 @@ import numpy as np
 from scipy import integrate
 from scipy.stats import entropy, norm
 from scipy.signal import fftconvolve
-from scipy.interpolate import interpn
+from scipy.interpolate import interpn, make_interp_spline
 from scipy.special import erf
 
 # TODO speed up convolutions by discarding values that are essentially zero, may need more specific variant of the code
@@ -15,6 +15,11 @@ try:
 except ImportError:
 	print("could not import git package")
 
+def none_sentinel(arg1, arg2):
+	if arg1 is None and arg2 is None:
+		raise ValueError
+	if arg1 is not None and arg2 is not None:
+		raise ValueError
 
 # checks if all the parameters are consistent with desired dimension
 def run_dimension_consistency_check(args):
@@ -90,7 +95,6 @@ def _interpret_two_dim_grid(grid):
 		y = f_grid[:, 0, 1]
 	return f_grid, x, y
 
-# AI use : some (most) of these functions have been written with Gemini Flash
 def match_x_to_grid_and_val_1d(x, grid, values_grid,
 							raise_error_if_outside=False, interpolation=True):
 	"""
@@ -119,6 +123,11 @@ def match_x_to_grid_and_val_1d(x, grid, values_grid,
 		return values_grid[idx] * (1-weights) + values_grid[idx+1] * weights
 
 	return values_grid[idx]
+
+# wrapper for splines from scipy
+def match_x_to_grid_with_cubic_1d(x, grid, values_grid, *args, **kwargs):
+	splines = make_interp_spline(grid, values_grid)
+	return splines(x)
 
 # I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
@@ -227,6 +236,7 @@ def convolve_cont_grid_1d_with_kernel(base, kernel):
 		mode='constant',
 		constant_values=(base[0], base[-1]),
 	)
+
 	return fftconvolve(padded_base, kernel, mode='valid')
 
 # TODO once kernel option is done I think you can get rid of this?
@@ -285,6 +295,7 @@ def sample_via_importance_resampling(
 	if proposal_pdf is None or proposal_sampler is None:
 		proposal_pdf = norm(loc=0, scale=5).pdf
 		proposal_sampler = norm(loc=0, scale=5).rvs
+
 
 	candidates = proposal_sampler(n_candidates)
 

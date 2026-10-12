@@ -11,6 +11,7 @@ import distributions
 from tools import support_width, run_dimension_consistency_check
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
+                       run_recurrent_kde_with_retaining,
                        run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d)
 
 
@@ -21,7 +22,7 @@ if __name__ == '__main__':
 	parser.add_argument("--lower_bd", default=-5, type=float, help="lower bound on the grid") # possibly multiple values if dim > 1, but to be changed later on
 	parser.add_argument("--upper_bd", default=5, type=float, help="upper bound on the grid")
 	parser.add_argument("--method",
-						choices=['led', 'kde', 'led_retain'], type=str, default='led',
+						choices=['led_forget', 'kde_forget', 'led_retain', 'kde_retain'], type=str, default='led_forget',
 						help=("method of sampling. Choose led for LED-KDE, kde for KDE and led_retain with LED-KDE "
 							  "in a data retaining scheme"))
 
@@ -99,8 +100,7 @@ if __name__ == '__main__':
 	parser.add_argument("--k_scale", default=0.04, type=float)
 	parser.add_argument("--scale_is_variance",
 						action=argparse.BooleanOptionalAction, default=False) # probably deprecated
-	parser.add_argument("--n_candidates", default=10000, type=int,
-						help="useful for KDE, ignored for everything else. Number of candidates in the standard IS scheme")
+	parser.add_argument("--cands_multiplier", default=100, type=int)
 	parser.add_argument("--n_samples", default=1000, type=int,
 						help="Number of samples chosen each round. Choose a small value (~50, 100) if method = led_retains")
 	parser.add_argument("--n_init_samples", default=1000, type=int,
@@ -195,16 +195,23 @@ if __name__ == '__main__':
 			grid_size=args.grid_size,
 			alpha_log_eps=args.alpha_log_eps,
 			alpha_denom_eps=args.alpha_denom_eps,
+			cands_multiplier=args.cands_multiplier,
 			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
 			led_is=args.fast_is))
 
-	if args.method == 'kde':
+	if args.method.startswith('kde'):
 		true_samples = true_mixture.rvs(args.n_samples)
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
 
-		run_kwargs.update(dict(starting_dist=true_mixture.pdf))
-		samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
-	elif args.method == 'led':
+		run_kwargs.update(dict(
+			starting_dist=true_mixture.pdf,
+            n_candidates=args.n_samples*args.cands_multiplier)
+		)
+		if args.method == 'kde_forget':
+			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+		else:
+			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_retaining(**run_kwargs)
+	elif args.method == 'led_forget':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
 			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")

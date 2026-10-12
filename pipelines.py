@@ -5,7 +5,7 @@ import datetime
 
 # other parts of the project
 from tools import (sample_via_importance_resampling, support_width,
-                   StrangeAlphaException, match_x_to_grid_and_val_1d,
+                   StrangeAlphaException, match_x_to_grid_and_val_1d, match_x_to_grid_with_cubic_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
@@ -15,6 +15,8 @@ from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retai
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
 
+comparative_metrics = {'kl_divergence': None, 'l2_wasserstein': None}
+
 def update_forgetting(old_obs, new_obs):
 	return new_obs
 
@@ -23,7 +25,7 @@ def update_retaining(old_obs, new_obs):
 
 def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, update_fn, print_fn, verbose):
 	"""
 	internal function for pipelines.
@@ -44,15 +46,15 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale)
 	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_fast_approx_1d
 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
-	pbar_length = max(100, int(n_trials / verbosity_freq))
+	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 		try:
 			led_samples = sampler_fn(
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
-				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_and_val_1d, ndim=1
+				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx, cands_multiplier=cands_multiplier,
+				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_with_cubic_1d, ndim=1
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")
@@ -82,7 +84,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 
 def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose):
 	"""
 	runs n_trials of data forgetting scheme with LED-KDE.
@@ -108,17 +110,17 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
     return_final_samples : bool, if True returns samples of the final round.
     verbosity_freq : int, verbosity frequency
     fast : bool, if True will apply fast KDE (approximation by binning)
-    led_is : importance sampling adapted ot LED
+    led_is : bool, if True importance sampling adapted ot LED
     verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget)
 
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose):
 	"""
 	runs scheme with LED-KDE with data retaining.
@@ -149,7 +151,7 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain)
 
 def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
@@ -197,19 +199,12 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
 
-
-def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
-	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
-	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
-	"""
-
-	n_trials : int
-	starting_dist : a function that computes density value
-	grid : a grid of values on which we will evaluate densities
-
-	"""
+# TODO refactor to be similar to the previous one, let the pdf thing happen inside sampler
+def run_recurrent_kde(n_trials, starting_dist, grid, kde_scale, n_candidates, n_samples,
+					descriptive_metrics, verbosity_freq, return_final_samples, update_fn, print_fn):
 
 	current_dist = starting_dist
+	current_obs = []
 
 	all_dists = []
 	statistics = []
@@ -225,7 +220,6 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 	for i in range(n_trials):
 		# first sample through IS
 		# then use this IS to compute new distribution with KDE
-		# TODO to rethink the order, the first one is kind of redundant, I think ?
 
 		samples_from_current_pdf, ess = sample_via_importance_resampling(
 			target_pdf=current_dist,
@@ -237,12 +231,44 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 		                               norm_scale=kde_scale)  # produces values of kde on grid, inferred from samples_from_current_pdf
 
 		all_dists.append(kde_from_samples)
+		current_obs = update_fn(current_obs, kde_from_samples)
 
 		current_dist = kde_sampled_pdf_func(grid=grid, kde=kde_from_samples) # a function that will be put in the sampler in the next round
-		stat = print_statistics_for_1d_forget(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
+		stat = print_fn(kde_from_samples, samples_from_current_pdf, descriptive_metrics, descriptive_functions, i,
 		                                    verbosity_freq)
 		statistics.append(stat)
 
 	if return_final_samples:
 		return (samples_from_current_pdf, np.asarray(all_dists, dtype=float), statistics)
+
 	return np.asarray(all_dists, dtype=float), statistics
+
+def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
+	"""
+
+	n_trials : int
+	starting_dist : a function that computes density value
+	grid : a grid of values on which we will evaluate densities
+
+	"""
+	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
+	                         kde_scale=kde_scale, n_candidates=n_candidates, n_samples=n_samples,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_1d_forget, update_fn=update_forgetting)
+
+
+def run_recurrent_kde_with_retaining(n_trials, starting_dist, grid,
+	kde_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'], verbosity_freq=10, return_final_samples=False):
+	"""
+
+	n_trials : int
+	starting_dist : a function that computes density value
+	grid : a grid of values on which we will evaluate densities
+
+	"""
+	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
+	                         kde_scale=kde_scale, n_candidates=n_candidates, n_samples=n_samples,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_1d_retain,
+	                         update_fn=update_retaining)
