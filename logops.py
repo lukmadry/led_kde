@@ -16,8 +16,9 @@ def build_progress_bar(i, M, length=50, p_sign='@'):
 	return s
 
 # we may need some 2d version of this
-def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, func_dict,
-                                   i, verbosity_freq, verbose=True, prefix_stat=None, *args, **kwargs):
+def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict,
+                                   i, verbosity_freq, verbose=True, prefix_stat=None,
+                                   comp_func_dict=None, orig_samples=None, *args, **kwargs):
 	"""
 	Helper function used in the main pass to print statistics of the current distribution.
 
@@ -25,23 +26,28 @@ def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, func_dict,
 
 	local_pdf : np.ndarray of pdf
 	local_samples : np.ndarray of samples
-	func_dict : dictionary of format str : Callable . If string ends with ___density then
+	desc_func_dict : dictionary of format str : Callable . If string ends with ___density then
 			Callable will be applied to local_pdf, if not it will be applied to local_samples
-	metrics : iterable with strings of metrics names. Has to be a subset of keys in func_dict
+	metrics : iterable with strings of metrics names. Has to be a subset of keys in desc_func_dict | comp_func_dict
 	i : index to display
 	verbosity_freq : dictates verbosity, if 1+i is divisible by this value, will print descriptive statistics
 	"""
 	stat = {}
+	comp_func_dict = {} if comp_func_dict is None else comp_func_dict
+	N = max(len(local_samples), len(orig_samples))
 	for s in metrics:
-		if s.endswith("___density"):
-			key = s.split("___")[0] + " of density"
-			val = func_dict[s](local_pdf)
-		else:
-			key = s
-			val = func_dict[s](local_samples)
-		if prefix_stat is not None:
-			key = prefix_stat + "___" + key
-		stat[key] = val
+		if s in desc_func_dict:
+			if s.endswith("___density"):
+				key = s.split("___")[0] + " of density"
+				val = desc_func_dict[s](local_pdf)
+			else:
+				key = s
+				val = desc_func_dict[s](local_samples)
+			if prefix_stat is not None:
+				key = prefix_stat + "___" + key
+			stat[key] = val
+		if s in comp_func_dict:
+			stat[s] = comp_func_dict[s](local_samples, orig_samples, N)
 
 	if verbose and (1 + i) % verbosity_freq == 0:
 		s = f"Trial nr: {1 + i}.\nDescriptive statistics: "
@@ -99,10 +105,10 @@ def log_results(all_distributions,
 	with open(os.path.join(log_dir, "kwargs.json"), "w") as f:
 		json.dump(params, f)
 
-	print("saving statistics logs") # are we going to save them the same when sampling new stuff ?
 	stat_names = list(statistics[0].keys())
 	Ns = len(statistics)
 	stat_unrolled = {key: [] for key in stat_names}
+	print("saving statistics logs") # are we going to save them the same when sampling new stuff ?
 	for i in range(Ns):
 		for key in stat_names:
 			stat_unrolled[key].append(statistics[i][key])
@@ -112,7 +118,6 @@ def log_results(all_distributions,
 	addon = int((Ns - square_root_int**2) > 0)
 	height = square_root_int + addon
 	width = square_root_int + addon
-
 	fig_stat, axs_stat = plt.subplots(height, width, figsize=(10, 10), sharex=True, sharey=False)
 	fig_stat.suptitle(f"Plots of statistics of run {dtime_sting}")
 	for i, key in enumerate(stat_names):

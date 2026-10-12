@@ -320,6 +320,30 @@ def sample_via_importance_resampling(
 	return candidates[resampled_indices], ess
 
 
+def compute_l2_wasserstein(obs_x, obs_y, num_pts):
+	q = np.linspace(0, 1, num=num_pts)
+	dx = q[1] - q[0]
+	qx = np.quantile(obs_x, q)
+	qy = np.quantile(obs_y, q)
+	return np.sqrt(np.trapezoid(y=np.square(qx - qy), x=q, dx=dx))
+
+
+def compute_kl_divergence(obs_x, obs_y, nr_bins=50, eps=1e-8):
+	min_obs = min(np.min(obs_x), np.min(obs_y))
+	max_obs = max(np.max(obs_x), np.max(obs_y))
+	bin_edges = np.linspace(min_obs, max_obs, nr_bins)
+
+	p_x = np.histogram(obs_x, bin_edges)[0]
+	p_y = np.histogram(obs_y, bin_edges)[0]
+
+	p_x = p_x.astype(float) + eps
+	p_y = p_y.astype(float) + eps
+
+	p_x /= p_x.sum()
+	p_y /= p_y.sum()
+
+	return np.sum(p_x * np.log(p_x / p_y))
+
 def convert_planar_to_xy(radius, angle):
 	x = radius * np.cos(angle)
 	y = radius * np.sin(angle)

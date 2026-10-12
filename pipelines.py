@@ -5,8 +5,9 @@ import datetime
 
 # other parts of the project
 from tools import (sample_via_importance_resampling, support_width,
-                   StrangeAlphaException, match_x_to_grid_and_val_1d, match_x_to_grid_with_cubic_1d,
-                   compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d)
+                   StrangeAlphaException, match_x_to_grid_with_cubic_1d,
+                   compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d,
+                   compute_l2_wasserstein, compute_kl_divergence)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
@@ -15,7 +16,7 @@ from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retai
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
 
-comparative_metrics = {'kl_divergence': None, 'l2_wasserstein': None}
+comparative_functions = {'kl_divergence': compute_kl_divergence, 'l2_wasserstein': compute_l2_wasserstein}
 
 def update_forgetting(old_obs, new_obs):
 	return new_obs
@@ -24,7 +25,7 @@ def update_retaining(old_obs, new_obs):
 	return np.concatenate([old_obs, new_obs], axis=0)
 
 def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
+                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, update_fn, print_fn, verbose):
 	"""
@@ -68,8 +69,10 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 		local_led_pdf = compute_kde_scott(x=grid, observations=obs)
 		all_pdfs.append(local_led_pdf)
 
-		stat = print_fn(local_led_pdf, obs, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq, verbose=verbose, n_samples=n_samples, grid=grid)
+		stat = print_fn(local_pdf=local_led_pdf, local_samples=obs, metrics=descriptive_metrics + comparative_metrics,
+		                i=i, desc_func_dict=descriptive_functions,
+		                verbosity_freq=verbosity_freq, verbose=verbose, n_samples=n_samples, grid=grid,
+		                comp_func_dict=comparative_functions, orig_samples=initial_observations)
 		statistics.append(stat)
 
 		if not verbose:
@@ -83,7 +86,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
 
 def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
+                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose):
 	"""
@@ -114,12 +117,12 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
     verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
+                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget)
 
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
+                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose):
 	"""
@@ -150,7 +153,7 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
     verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
+                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, kernel, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
                           fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain)
 

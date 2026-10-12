@@ -197,6 +197,7 @@ if __name__ == '__main__':
 			alpha_denom_eps=args.alpha_denom_eps,
 			cands_multiplier=args.cands_multiplier,
 			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
+			comparative_metrics=['l2_wasserstein', 'kl_divergence'],
 			led_is=args.fast_is))
 
 	if args.method.startswith('kde'):
