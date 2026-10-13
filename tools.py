@@ -296,13 +296,13 @@ def sample_via_importance_resampling(
 		proposal_pdf = norm(loc=0, scale=5).pdf
 		proposal_sampler = norm(loc=0, scale=5).rvs
 
-
 	candidates = proposal_sampler(n_candidates)
 
 	# 2. Evaluate likelihood ratios p(x) / q(x)
-	print(candidates.shape)
 	p_vals = np.asarray(target_pdf(candidates), dtype=float)
+	p_vals = np.maximum(p_vals, 0) # not sure why but there was once underflow of type -1e300. you may be hiding some actual problem
 	q_vals = np.asarray(proposal_pdf(candidates), dtype=float)
+	q_vals = np.maximum(q_vals, 0)
 
 	# Stabilise log weights against underflow/overflow
 	log_w = np.log(p_vals + 1e-300) - np.log(q_vals + 1e-300)

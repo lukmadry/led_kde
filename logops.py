@@ -58,15 +58,19 @@ def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_
 
 	return stat
 
-def print_statistics_for_1d_retain(local_pdf, local_samples, metrics, func_dict, i, verbosity_freq,
-                                   n_samples, grid, verbose):
-	new_stats = print_statistics_for_1d_forget(local_pdf, local_pdf, metrics, func_dict, i,
-	                                           verbosity_freq, verbose=verbose, prefix_stat="A_")
+def print_statistics_for_1d_retain(local_pdf, local_samples, metrics,
+                                   desc_func_dict, i, verbosity_freq,
+                                   n_samples, grid, verbose, comp_func_dict, orig_samples):
+	new_stats = print_statistics_for_1d_forget(local_pdf, local_pdf, metrics, desc_func_dict, i,
+	                                           verbosity_freq, verbose=verbose,
+	                                           orig_samples=orig_samples, prefix_stat="A_",
+	                                           comp_func_dict=comp_func_dict)
 	if n_samples > 50:
 		new_samples = local_samples[-n_samples:]
 		new_pdf = compute_kde_scott(x=grid, observations=local_samples)
-		gen_stats = print_statistics_for_1d_forget(new_pdf, new_samples, metrics, func_dict, i,
-		                                           verbosity_freq, verbose=verbose, prefix_stat="G_")
+		gen_stats = print_statistics_for_1d_forget(new_pdf, new_samples, metrics, desc_func_dict, i,
+		                                           verbosity_freq, verbose=verbose, prefix_stat="G_",
+		                                           orig_samples=orig_samples)
 		new_stats.update(gen_stats)
 	return new_stats
 
@@ -113,6 +117,7 @@ def log_results(all_distributions,
 		for key in stat_names:
 			stat_unrolled[key].append(statistics[i][key])
 
+	# TODO fix number of rows, one too big for (2,3), we have (3,3) instead
 	Ns = len(stat_names)
 	square_root_int = int(np.sqrt(Ns))
 	addon = int((Ns - square_root_int**2) > 0)

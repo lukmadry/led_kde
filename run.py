@@ -152,10 +152,11 @@ if __name__ == '__main__':
 		grid=grid, 
 		k_scale=args.k_scale,
 		verbose=args.verbose,
+		descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
+		comparative_metrics=['l2_wasserstein', 'kl_divergence'],
 		verbosity_freq=args.verbosity_freq,
 		return_final_samples=True,
 		n_samples=args.n_samples,
-		kernel=args.kernel,
 		fast=args.fast_kde)
 
 	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
@@ -196,8 +197,6 @@ if __name__ == '__main__':
 			alpha_log_eps=args.alpha_log_eps,
 			alpha_denom_eps=args.alpha_denom_eps,
 			cands_multiplier=args.cands_multiplier,
-			descriptive_metrics=['mean', 'sd', 'support_width', 'max___density'],
-			comparative_metrics=['l2_wasserstein', 'kl_divergence'],
 			led_is=args.fast_is))
 
 	if args.method.startswith('kde'):
@@ -205,13 +204,13 @@ if __name__ == '__main__':
 		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
 
 		run_kwargs.update(dict(
-			starting_dist=true_mixture.pdf,
+			starting_dist=true_samples,
             n_candidates=args.n_samples*args.cands_multiplier)
 		)
 		if args.method == 'kde_forget':
-			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_forgetting(**run_kwargs)
+			samples_last_pdf, all_dist, stat, new_info = run_recurrent_kde_with_forgetting(**run_kwargs)
 		else:
-			samples_last_pdf, all_dist, stat = run_recurrent_kde_with_retaining(**run_kwargs)
+			samples_last_pdf, all_dist, stat, new_info = run_recurrent_kde_with_retaining(**run_kwargs)
 	elif args.method == 'led_forget':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
@@ -223,7 +222,6 @@ if __name__ == '__main__':
 			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_2d(**run_kwargs)
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
-
 		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
 		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
 
