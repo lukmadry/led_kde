@@ -7,6 +7,8 @@ from scipy.stats import entropy, norm
 from scipy.signal import fftconvolve
 from scipy.interpolate import interpn, make_interp_spline
 from scipy.special import erf
+from scipy.integrate import cumulative_trapezoid
+
 
 # TODO speed up convolutions by discarding values that are essentially zero, may need more specific variant of the code
 
@@ -326,6 +328,23 @@ def compute_l2_wasserstein(obs_x, obs_y, num_pts):
 	qx = np.quantile(obs_x, q)
 	qy = np.quantile(obs_y, q)
 	return np.sqrt(np.trapezoid(y=np.square(qx - qy), x=q, dx=dx))
+
+
+def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
+
+	p_norm = pdf_p / np.trapezoid(pdf_p, grid)
+	q_norm = pdf_q / np.trapezoid(pdf_q, grid)
+
+	cdf_p = cumulative_trapezoid(p_norm, grid, initial=0.0)
+	cdf_q = cumulative_trapezoid(q_norm, grid, initial=0.0)
+	cdf_p /= cdf_p[-1]
+	cdf_q /= cdf_q[-1]
+
+	q = np.linspace(0.0, 1.0, num_quantiles)
+	inv_cdf_p = np.interp(q, cdf_p, grid)
+	inv_cdf_q = np.interp(q, cdf_q, grid)
+
+	return np.sqrt(np.trapezoid((inv_cdf_p - inv_cdf_q)**2, q))
 
 
 def compute_kl_divergence(obs_x, obs_y, nr_bins=50, eps=1e-8):

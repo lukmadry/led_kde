@@ -4,12 +4,13 @@ import numpy as np
 from scipy import stats
 
 import datetime
+from functools import partial
 
 # other parts of the project
 from tools import (sample_via_importance_resampling, support_width,
                    StrangeAlphaException, match_x_to_grid_with_cubic_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d,
-                   compute_l2_wasserstein, compute_kl_divergence)
+                   compute_l2_wasserstein, compute_kl_divergence, wasserstein_from_pdfs_1d)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
@@ -18,7 +19,8 @@ from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retai
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width}
 
-comparative_functions = {'kl_divergence': compute_kl_divergence, 'l2_wasserstein': compute_l2_wasserstein}
+comparative_functions = {'kl_divergence': compute_kl_divergence,
+                         'l2_wasserstein': compute_l2_wasserstein, 'l2_wasserstein___density': wasserstein_from_pdfs_1d}
 
 def update_forgetting(old_obs, new_obs):
 	return new_obs
@@ -52,6 +54,11 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = datetime.datetime.now()
+
+	comparative_functions['l2_wasserstein___density'] = partial(wasserstein_from_pdfs_1d, grid=grid)
+	starting_density = compute_kde_scott(grid, initial_observations)
+
+	print("Metrics: ", descriptive_metrics + comparative_metrics)
 	for i in range(n_trials):
 		try:
 			led_samples = sampler_fn(
@@ -75,7 +82,8 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 		stat = print_fn(local_pdf=local_led_pdf, local_samples=obs, metrics=descriptive_metrics + comparative_metrics,
 		                i=i, desc_func_dict=descriptive_functions,
 		                verbosity_freq=verbosity_freq, verbose=verbose, n_samples=n_samples, grid=grid,
-		                comp_func_dict=comparative_functions, orig_samples=initial_observations)
+		                comp_func_dict=comparative_functions, orig_samples=initial_observations,
+		                orig_density=starting_density)
 		statistics.append(stat)
 
 		if not verbose:
@@ -248,7 +256,7 @@ def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_sa
 		stat = print_fn(local_pdf=kde_from_samples, local_samples=current_obs, metrics=descriptive_metrics + comparative_metrics,
 		                i=i, desc_func_dict=descriptive_functions,
 		                verbosity_freq=verbosity_freq, verbose=verbose, n_samples=n_samples, grid=grid,
-		                comp_func_dict=comparative_functions, orig_samples=starting_dist)
+		                comp_func_dict=comparative_functions, orig_samples=starting_dist, orig_density=starting_kde)
 		statistics.append(stat)
 
 		if not verbose:

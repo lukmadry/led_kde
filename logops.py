@@ -18,7 +18,8 @@ def build_progress_bar(i, M, length=50, p_sign='@'):
 # we may need some 2d version of this
 def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict,
                                    i, verbosity_freq, verbose=True, prefix_stat=None,
-                                   comp_func_dict=None, orig_samples=None, *args, **kwargs):
+                                   comp_func_dict=None, orig_samples=None,
+                                   orig_density=None, *args, **kwargs):
 	"""
 	Helper function used in the main pass to print statistics of the current distribution.
 
@@ -47,7 +48,13 @@ def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_
 				key = prefix_stat + "___" + key
 			stat[key] = val
 		if s in comp_func_dict:
-			stat[s] = comp_func_dict[s](local_samples, orig_samples, N)
+			if s.endswith("___density"):
+				key = s.split("___")[0] + " of density"
+				val = comp_func_dict[s](local_pdf, orig_density)
+			else:
+				val = comp_func_dict[s](local_samples, orig_samples, N)
+				key = s
+			stat[key] = val
 
 	if verbose and (1 + i) % verbosity_freq == 0:
 		s = f"Trial nr: {1 + i}.\nDescriptive statistics: "
@@ -60,11 +67,11 @@ def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_
 
 def print_statistics_for_1d_retain(local_pdf, local_samples, metrics,
                                    desc_func_dict, i, verbosity_freq,
-                                   n_samples, grid, verbose, comp_func_dict, orig_samples):
-	new_stats = print_statistics_for_1d_forget(local_pdf, local_pdf, metrics, desc_func_dict, i,
+                                   n_samples, grid, verbose, comp_func_dict, orig_samples, orig_density):
+	new_stats = print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict, i,
 	                                           verbosity_freq, verbose=verbose,
 	                                           orig_samples=orig_samples, prefix_stat="A_",
-	                                           comp_func_dict=comp_func_dict)
+	                                           comp_func_dict=comp_func_dict, orig_density=orig_density)
 	if n_samples > 50:
 		new_samples = local_samples[-n_samples:]
 		new_pdf = compute_kde_scott(x=grid, observations=local_samples)
