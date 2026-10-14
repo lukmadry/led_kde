@@ -11,7 +11,7 @@ from scipy.signal import fftconvolve
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
                    match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, convolve_cont_grid_1d_with_kernel,
-                   convolve_cont_grid_2d_with_kernel)
+                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
@@ -393,6 +393,12 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 	idx = np.random.randint(low=0,high=N,size=n_candidates)
 	X = observations[idx] - u - w
 	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=interpolation)
+	if np.any(alph_weights > -1e-6): #sufficiently small that we can consider it an approximation error
+		alph_weights = np.maximum(alph_weights, 0)
+	else:
+		raise NegativeProbabilityError(f"Observed negative probability of {np.min(alph_weights)}. "
+		                               f"Stopping the run, you may consider rerunning the same "
+		                               f"trial with linear interpolation")
 	alph_weights /= np.sum(alph_weights)
 	resampled_indices = np.random.choice(
 		n_candidates, size=n_samples, replace=True, p=alph_weights

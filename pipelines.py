@@ -8,9 +8,9 @@ from functools import partial
 
 # other parts of the project
 from tools import (sample_via_importance_resampling, support_width,
-                   StrangeAlphaException, match_x_to_grid_with_cubic_1d,
+                   StrangeAlphaException, match_x_to_grid_with_cubic_1d, match_x_to_grid_and_val_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d,
-                   compute_l2_wasserstein, compute_kl_divergence, wasserstein_from_pdfs_1d)
+                   compute_l2_wasserstein, compute_kl_divergence, wasserstein_from_pdfs_1d, NegativeProbabilityError)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
@@ -31,7 +31,7 @@ def update_retaining(old_obs, new_obs):
 def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, update_fn, print_fn, verbose):
+                          fast, led_is, update_fn, print_fn, verbose, interpolation):
 	"""
 
 	internal function for pipelines.
@@ -52,6 +52,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale)
 	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_fast_approx_1d
 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
+	matcher_fn = match_x_to_grid_with_cubic_1d if interpolation == 'cubic' else match_x_to_grid_and_val_1d
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = datetime.datetime.now()
 
@@ -65,12 +66,14 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx, cands_multiplier=cands_multiplier,
-				alpha_func_obj=alpha_func_obj, matcher_fn=match_x_to_grid_with_cubic_1d, ndim=1
+				alpha_func_obj=alpha_func_obj, matcher_fn=matcher_fn, ndim=1
 			)
-		except StrangeAlphaException as err:
+		except (NegativeProbabilityError, StrangeAlphaException) as err:
 			print(f"Iteration {i}")
-			if len(additional_info) == 0:
-				additional_info = {"strange_alpha": err.alpha_value}
+			if hasattr(err, 'alpha_value'):
+				additional_info.update({"strange_alpha": err.alpha_value})
+			if hasattr(err, 'min_prob_value'):
+				additional_info.update({"negative_proba": err.min_prob_value})
 			if i > 100:
 				print("we will proceed with saving the results anyway")
 			break
@@ -99,7 +102,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose):
+                          fast, led_is, verbose, interpolation):
 	"""
 	runs n_trials of data forgetting scheme with LED-KDE.
 
@@ -115,7 +118,7 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
 	t_scale : float, variance of the internal gaussian L
 	n_samples : int, number of samples resampled at every step
 	descriptive_metrics : list of strings, keys of dictionary descriptive_functions. Can be :
-	  mean, sd, suppord_width, max, max___density
+	  mean, sd, support_width, max, max___density
     kernel : str, irrelevant for now (29/09)
     radius : while creating kernel for convolution, its size will be capped at this value. If None then we will apply
       kernel of the same size as grid
@@ -130,12 +133,13 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget)
+                          fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget,
+                                interpolation=interpolation)
 
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose):
+                          fast, led_is, verbose, interpolation):
 	"""
 	runs scheme with LED-KDE with data retaining.
 
@@ -166,7 +170,8 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain)
+                          fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain,
+	                            interpolation=interpolation)
 
 def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,

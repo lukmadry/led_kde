@@ -389,3 +389,9 @@ class StrangeAlphaException(Exception):
 		super().__init__(message)
 		self.alpha_value = alpha_value
 		print(message)
+
+class NegativeProbabilityError(Exception):
+	def __init__(self, message, min_prob_value):
+		super().__init__(message)
+		self.min_prob_value = min_prob_value
+		print(message)

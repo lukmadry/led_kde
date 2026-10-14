@@ -37,6 +37,8 @@ if __name__ == '__main__':
 	                    help="technical parameter for numerical stability in denominator in the computation of alpha. Best not touch")
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
 	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
+	parser.add_argument("--interpolation", choices=['linear', 'cubic'], default='linear', type=str,
+	                    help='by default use cubic, downgrade to linear if there are negative values')
 	parser.add_argument("--with_fft_cutoff",
 						action=argparse.BooleanOptionalAction, default=False,
 						help="allows to use smaller kernel array in Gaussian computations. "
@@ -156,7 +158,8 @@ if __name__ == '__main__':
 		verbosity_freq=args.verbosity_freq,
 		return_final_samples=True,
 		n_samples=args.n_samples,
-		fast=args.fast_kde)
+		fast=args.fast_kde,
+		interpolation=args.interpolation)
 
 	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel (if 2D, False here is overridden): {args.with_fft_cutoff}\n"
