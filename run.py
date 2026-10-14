@@ -16,7 +16,6 @@ from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_
 
 
 if __name__ == '__main__':
-	# TODO add help arguments
 	parser = argparse.ArgumentParser()
 	parser.add_argument("--n", required=True, type=int, help="number of iterations")
 	parser.add_argument("--lower_bd", default=-5, type=float, help="lower bound on the grid") # possibly multiple values if dim > 1, but to be changed later on
@@ -200,31 +199,32 @@ if __name__ == '__main__':
 			led_is=args.fast_is))
 
 	if args.method.startswith('kde'):
-		true_samples = true_mixture.rvs(args.n_samples)
-		print(f"True distribution:\nMean: {np.mean(true_samples):.4f}. Std: {np.std(true_samples):.4f}. Max - min: {support_width(true_samples)}\n")
+		init_obs = true_mixture.rvs(args.n_samples)
+		print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
 
 		run_kwargs.update(dict(
-			starting_dist=true_samples,
+			starting_dist=init_obs,
             n_candidates=args.n_samples*args.cands_multiplier)
 		)
 		if args.method == 'kde_forget':
-			samples_last_pdf, all_dist, stat, new_info = run_recurrent_kde_with_forgetting(**run_kwargs)
+			final_samples, all_dist, stat, new_info = run_recurrent_kde_with_forgetting(**run_kwargs)
 		else:
-			samples_last_pdf, all_dist, stat, new_info = run_recurrent_kde_with_retaining(**run_kwargs)
+			final_samples, all_dist, stat, new_info = run_recurrent_kde_with_retaining(**run_kwargs)
 	elif args.method == 'led_forget':
 		init_obs = true_mixture.rvs(args.n_samples)
 		if dim == 1:
 			print(f"True distribution:\nMean: {np.mean(init_obs):.4f}. Std: {np.std(init_obs):.4f}. Max - min: {support_width(init_obs)}\n")
 		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
 		if dim == 1:
-			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_1d(**run_kwargs)
+			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_1d(**run_kwargs)
 		else:
-			final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_2d(**run_kwargs)
+			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_2d(**run_kwargs)
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
 		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
-		final_sample, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
-
+		final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
+	else:
+		raise ValueError
 	args_dict['new_info'] = new_info
 	print(f"\nTime passed from t0 to t1: {new_info['time_in_seconds']:.4f} seconds.")
 
@@ -240,4 +240,5 @@ if __name__ == '__main__':
 		            init_dist=init_dist,
 		            simulation_step=args.gif_simulation_step,
 		            grid=grid,
-		            ndim=dim)
+		            ndim=dim,
+		            final_samples=final_samples, init_samples=init_obs)

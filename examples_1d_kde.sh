@@ -1,0 +1,2 @@
+python3 run.py --lower_bd -5 --upper_bd 5 --centers -1 1 --widths 1 1 --weights 10 1 --dist_type uniform --grid_size 2000 --n_samples 1000 --cands_multiplier 100 --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --verbosity_freq 100 --fast_is --no-verbose
+python3 run.py --lower_bd -5 --upper_bd 5 --centers -1 1 --widths 1 1 --weights 1 10 --dist_type uniform --grid_size 2000 --n_samples 1000 --cands_multiplier 100 --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --verbosity_freq 100 --fast_is --no-verbose

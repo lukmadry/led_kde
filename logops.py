@@ -68,6 +68,7 @@ def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_
 def print_statistics_for_1d_retain(local_pdf, local_samples, metrics,
                                    desc_func_dict, i, verbosity_freq,
                                    n_samples, grid, verbose, comp_func_dict, orig_samples, orig_density):
+
 	new_stats = print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict, i,
 	                                           verbosity_freq, verbose=verbose,
 	                                           orig_samples=orig_samples, prefix_stat="A_",
@@ -90,7 +91,8 @@ def log_results(all_distributions,
                 results_dirpath,
                 results_filepath,
                 params,
-                init_dist, y_bounds=None, simulation_step=100, grid=None, ndim=1):
+                init_dist, y_bounds=None, simulation_step=100, grid=None, ndim=1,
+                init_samples=None, final_samples=None):
 	"""
 
 	Saves the results in the following format:
@@ -119,25 +121,28 @@ def log_results(all_distributions,
 	stat_names = list(statistics[0].keys())
 	Ns = len(statistics)
 	stat_unrolled = {key: [] for key in stat_names}
-	print("saving statistics logs") # are we going to save them the same when sampling new stuff ?
+	print("saving statistics logs")
 	for i in range(Ns):
 		for key in stat_names:
 			stat_unrolled[key].append(statistics[i][key])
 
+	with open(os.path.join(log_dir, "statistics.json"), "w") as f:
+		json.dump(stat_unrolled, f)
+
 	# TODO fix number of rows, one too big for (2,3), we have (3,3) instead
 	Ns = len(stat_names)
-	square_root_int = int(np.sqrt(Ns))
-	addon = int((Ns - square_root_int**2) > 0)
-	height = square_root_int + addon
-	width = square_root_int + addon
+	height = int(np.ceil(np.sqrt(Ns)))
+	width = int(np.ceil(Ns / height))
 	fig_stat, axs_stat = plt.subplots(height, width, figsize=(10, 10), sharex=True, sharey=False)
 	fig_stat.suptitle(f"Plots of statistics of run {dtime_sting}")
 	for i, key in enumerate(stat_names):
-		ih = i // height
-		iw = i % height
+		ih = i // width
+		iw = i % width
 		axs_stat[ih, iw].plot(stat_unrolled[key])
 		axs_stat[ih, iw].set_title(key)
-
+	# hides unused plots
+	for j in range(Ns, height * width):
+		fig_stat.delaxes(axs_stat.flatten()[j])
 	fig_stat.savefig(os.path.join(log_dir, "statistics_plots.png"))
 
 	print("saving the picture of the final distribution")
@@ -189,6 +194,17 @@ def log_results(all_distributions,
 		axes_final[1].contourf(grid[:, :, 0], grid[:, :, 1], all_distributions[-1])
 		fig_final.suptitle("Top : original distributions, bottom : final distribution")
 		fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
+
+	if init_samples is not None and final_samples is not None:
+		print("saving histograms of initial and final distribution")
+
+		fig_hist, axes_hists = plt.subplots(1, 2, figsize=(10, 5))
+		axes_hists[0].hist(init_samples, bins=100)
+		axes_hists[0].set_title("Histogram of an initial distribution")
+		axes_hists[1].hist(final_samples, bins=100)
+		axes_hists[1].set_title("Histogram of a final distribution")
+
+		fig_hist.savefig(os.path.join(log_dir, "histogram_plots.png"))
 
 	if params['save_distributions']:
 		filename = os.path.join(log_dir, "distribution_logs.hdf5")
