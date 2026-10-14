@@ -1,0 +1,1 @@
+python3 run.py --lower_bd -5 --upper_bd 5 --centers -1 1 --widths 1 1 --weights 10 1 --dist_type uniform --grid_size 2000 --n_samples 1000 --cands_multiplier 100 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 25 --verbosity_freq 100 --fast_is --no-verbose
