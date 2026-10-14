@@ -218,7 +218,7 @@ def log_results_2d():
 	pass
 
 # does not work very well will have to reworked
-PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'dist_type',
+PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'dist_type', 'interpolation',
                   'n_samples', 'n', 'dist_type', 'widths', 'n_init_samples', 'grid_size']
 def find_datetime_with_this_params(desired_values, results_filepath,
                                    important_keys=PARAMETER_KEYS, full_agreement_keys=['method'],

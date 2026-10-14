@@ -37,7 +37,7 @@ if __name__ == '__main__':
 	                    help="technical parameter for numerical stability in denominator in the computation of alpha. Best not touch")
 	parser.add_argument("--with_interpolation", action=argparse.BooleanOptionalAction, default=True,
 	                    help="don't touch, it seems to be important to keep it at True, otherwise there is a bias towards negative values")
-	parser.add_argument("--interpolation", choices=['linear', 'cubic'], default='linear', type=str,
+	parser.add_argument("--interpolation", choices=['linear', 'cubic'], default='cubic', type=str,
 	                    help='by default use cubic, downgrade to linear if there are negative values')
 	parser.add_argument("--with_fft_cutoff",
 						action=argparse.BooleanOptionalAction, default=False,
