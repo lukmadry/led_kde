@@ -218,10 +218,15 @@ def log_results_2d():
 	pass
 
 # does not work very well will have to reworked
-PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'n_samples', 'n', 'dist_type']
+PARAMETER_KEYS = ['t_scale', 'k_scale', 'method', 'centers', 'scales', 'dist_type',
+                  'n_samples', 'n', 'dist_type', 'widths', 'n_init_samples', 'grid_size']
 def find_datetime_with_this_params(desired_values, results_filepath,
                                    important_keys=PARAMETER_KEYS, full_agreement_keys=['method'],
                                    min_agreement: float=0.5):
+	"""
+
+	desired_values:
+	"""
 	for key in important_keys:
 		assert(key in PARAMETER_KEYS)
 
@@ -232,9 +237,15 @@ def find_datetime_with_this_params(desired_values, results_filepath,
 		all_experiments = f.readlines()
 	all_experiments = [json.loads(exp[:-1]) for exp in all_experiments]
 
-	all_keys = set(desired_values.keys()) | set(important_keys)
+	# all_keys = set(desired_values.keys()) | set(important_keys) - OLD this way we were casting the net too wide
+	all_keys = set(important_keys)
 	less_important_keys = all_keys - set(full_agreement_keys)
 	less_important_keys = list(less_important_keys)
+
+	print("Hard agreement keys: ", full_agreement_keys)
+	print("Soft agreement keys: ", less_important_keys, '\n')
+	print(f"We will show the experiments which are identical on hard agreement keys, and have more than {100*min_agreement:.2f}% "
+	      f"agreement on the soft agreement keys.\n\n")
 
 	good_datetimes = []
 	for exp in all_experiments:
@@ -262,5 +273,5 @@ def find_datetime_with_this_params(desired_values, results_filepath,
 			good_datetimes.append((exp['datetime'], agreement, matches))
 
 	for dt in good_datetimes:
-		print(f"Datetime: {dt[0]}. Agreement rate: {agreement}. Matches: {matches}")
+		print(f"Datetime: {dt[0]}. Agreement rate: {dt[1]:.3f}. Matches (apart from obligatory): {dt[2]}")
 
