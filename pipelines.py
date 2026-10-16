@@ -7,20 +7,28 @@ import datetime
 from functools import partial
 
 # other parts of the project
-from tools import (sample_via_importance_resampling, support_width,
+# this is too big, you should try and split it or rearrange it somehow
+# maybe you can move some "guardian" functions to a separate module
+from tools import (sample_via_importance_resampling, support_width, support_width_axis, descriptive_fns_sentinel,
                    StrangeAlphaException, match_x_to_grid_with_cubic_1d, match_x_to_grid_and_val_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d,
-                   compute_l2_wasserstein, compute_kl_divergence, wasserstein_from_pdfs_1d, NegativeProbabilityError)
+                   compute_l2_wasserstein_1d, compute_kl_divergence, wasserstein_from_pdfs_1d, NegativeProbabilityError,
+                   estimate_bounding_radius_2d, comparative_fns_sentinel)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
 from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
-                         'max___density': np.max, 'max': np.max, 'support_width': support_width}
+                         'max___density': np.max, 'max': np.max, 'support_width': support_width,
+                         'mean_ax0': partial(np.mean, axis=0), 'mean_ax1': partial(np.mean, axis=1),
+                         'sd_ax0': partial(np.std, axis=0), 'sd_ax1': partial(np.std, axis=1),
+                         'median_ax0': partial(np.median, axis=0), 'median_ax1': partial(np.median, axis=1),
+                         'support_width_ax0': partial(support_width_axis, axis=0), 'support_width_ax1': partial(support_width_axis, axis=1),
+                         'radius_2d': estimate_bounding_radius_2d}
 
-comparative_functions = {'kl_divergence': compute_kl_divergence,
-                         'l2_wasserstein': compute_l2_wasserstein, 'l2_wasserstein___density': wasserstein_from_pdfs_1d}
+comparative_functions = {'kl_divergence': compute_kl_divergence, 'sliced_wasserstein_2d': sliced_wasserstein_2d,
+                         'l2_wasserstein': compute_l2_wasserstein_1d, 'l2_wasserstein___density': wasserstein_from_pdfs_1d}
 
 def update_forgetting(old_obs, new_obs):
 	return new_obs
@@ -59,6 +67,8 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	comparative_functions['l2_wasserstein___density'] = partial(wasserstein_from_pdfs_1d, grid=grid)
 	starting_density = compute_kde_scott(grid, initial_observations)
 
+	descriptive_metrics = descriptive_fns_sentinel(descriptive_metrics, 1)
+	comparative_metrics = comparative_fns_sentinel(comparative_metrics, 1)
 	print("Metrics: ", descriptive_metrics + comparative_metrics)
 	for i in range(n_trials):
 		try:
@@ -217,6 +227,9 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 	if return_final_samples:
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
+
+def run_recurrent_kde_with_data_forgetting_2d():
+	pass
 
 # TODO refactor to be similar to the previous one, let the pdf thing happen inside sampler
 def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_samples,

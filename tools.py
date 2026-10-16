@@ -346,6 +346,43 @@ def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
 	return np.sqrt(np.trapezoid((inv_cdf_p - inv_cdf_q)**2, q))
 
+# apparently this is a lower bound for wasserstein, not a true L2 wasserstein
+# the two below can be computed together maybe ? 
+# you could refactor it to "projection_estimation" method or something
+def sliced_wasserstein_2d(samples_a, samples_b, num_projections=100, num_pts=1000):
+
+	d = samples_a.shape[1]
+
+	angles = np.random.uniform(0, 2 * np.pi, num_projections)
+	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+	
+	sw2_sum = 0.0
+	for proj in projections:
+
+		proj_a = samples_a @ proj
+		proj_b = samples_b @ proj
+
+		w1d = compute_l2_wasserstein(proj_a, proj_b, num_pts)
+		sw2_sum += w1d**2
+
+	return np.sqrt(sw2_sum / num_projections)
+
+def estimate_bounding_radius_2d(samples, num_projections):
+
+	d = samples_a.shape[1]
+
+	angles = np.random.uniform(0, 2 * np.pi, num_projections)
+	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+
+	max_support = 0
+	for proj in projections:
+
+		proj_theta = samples_b @ proj
+
+		s_width_projection = support_width(proj_theta)
+		max_support = max(max_support, s_width_projection)
+
+	return max_support
 
 def compute_kl_divergence(obs_x, obs_y, nr_bins=50, eps=1e-8):
 	min_obs = min(np.min(obs_x), np.min(obs_y))
@@ -381,8 +418,23 @@ def get_git_commit_gitpython():
 def support_width(observations):
 	return np.max(observations) - np.min(observations)
 
+def support_width_axis(observations, axis):
+	return np.max(observations, axis=axis) - np.min(observations, axis=axis)
+
+def support_ball(observations):
+	pass
+
 def nr_of_peaks(pdf_on_a_grid):
 	pass
+
+# it exists on Dell
+def descriptive_fns_sentinel(metrics, dimension):
+	return metrics
+
+# will have to be implemented
+def comparative_fns_sentinel(metrics, dimension):
+	raise NotImplementedError
+
 
 class StrangeAlphaException(Exception):
 	def __init__(self, message, alpha_value):
