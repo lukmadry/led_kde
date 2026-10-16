@@ -133,14 +133,14 @@ def match_x_to_grid_with_cubic_1d(x, grid, values_grid, *args, **kwargs):
 
 # I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
-							   raise_error_if_outside=False, method='cubic', interpolation=True):
+							   raise_error_if_outside=False, interpolation=True):
 	"""
 	grid :
 	"""
 
 	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
-		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x, method=method) 
+		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x) # TODO presumably this wastes time on binary search as well
 	else:
 		raise NotImplementedError
 #
@@ -322,12 +322,13 @@ def sample_via_importance_resampling(
 	return candidates[resampled_indices], ess
 
 
-def compute_l2_wasserstein_1d(obs_x, obs_y, num_pts):
+def compute_l2_wasserstein(obs_x, obs_y, num_pts):
 	q = np.linspace(0, 1, num=num_pts)
 	dx = q[1] - q[0]
 	qx = np.quantile(obs_x, q)
 	qy = np.quantile(obs_y, q)
 	return np.sqrt(np.trapezoid(y=np.square(qx - qy), x=q, dx=dx))
+
 
 def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
@@ -345,8 +346,41 @@ def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
 	return np.sqrt(np.trapezoid((inv_cdf_p - inv_cdf_q)**2, q))
 
-def wasserstein_from_pdfs_2d(pdf_p, pdf_q, grid, num_quantiles):
-	pass
+# apparently this is a lower bound for wasserstein, not a true L2 wasserstein
+# the two below can be computed together maybe ?
+# you could refactor it to "projection_estimation" method or something
+def sliced_wasserstein_2d(samples_a, samples_b, num_projections=100, num_pts=1000):
+
+	d = samples_a.shape[1]
+
+	angles = np.random.uniform(0, 2 * np.pi, num_projections)
+	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+
+	sw2_sum = 0.0
+	for proj in projections:
+
+		proj_a = samples_a @ proj
+		proj_b = samples_b @ proj
+
+		w1d = compute_l2_wasserstein(proj_a, proj_b, num_pts)
+		sw2_sum += w1d**2
+
+	return np.sqrt(sw2_sum / num_projections)
+
+def estimate_bounding_radius_2d(samples, num_projections):
+
+	angles = np.random.uniform(0, 2 * np.pi, num_projections)
+	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
+
+	max_support = 0
+	for proj in projections:
+
+		proj_theta = samples @ proj
+
+		s_width_projection = support_width(proj_theta)
+		max_support = max(max_support, s_width_projection)
+
+	return max_support
 
 def compute_kl_divergence(obs_x, obs_y, nr_bins=50, eps=1e-8):
 	min_obs = min(np.min(obs_x), np.min(obs_y))
