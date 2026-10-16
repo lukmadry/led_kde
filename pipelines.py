@@ -197,7 +197,7 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 	obs = initial_observations
 	k_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * k_scale).rvs
 	t_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * t_scale).rvs
-
+	radius = dx * grid_size
 	kernel_arr = compute_gaussian_kernel_2d(grid, radius, k_scale)
 	matcher_fn = partial(match_x_to_grid_and_val_2d, method=interpolation)
 	pbar_length = max(50, int(n_trials / verbosity_freq))

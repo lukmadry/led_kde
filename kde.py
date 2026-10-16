@@ -7,6 +7,7 @@ import time # for profiling
 
 from scipy.stats import norm, multivariate_normal, uniform
 from scipy.signal import fftconvolve
+from sklearn.neighbors import KernelDensity
 
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
@@ -17,6 +18,7 @@ from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
 # I guess that scipy does a lot of other stuff under the hood
 # however it cuts the function a little bit and I haven't tested systematically yet if it makes the difference, so keeping it as a separate option
 # TODO move some of the numerical tests into a separate file so that one can always re-test them if needed
+# TODO I think this can be entirely replace by a scikit-learn methods, just need to be carefuly about their bandwith parameter
 def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	"""
 	Function that computes kde, i.e. for empirical measure mu^N = 1/N sum_{i=1}^N delta_{X_i} the result is
@@ -54,7 +56,7 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 
 def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	"""
-	uses binning-fft method to compute kde.
+	uses binning-fft method to compute kde, mostly for learning purposes
 
 	x: np.ndarray (M, )
 	observations: np.ndarray (N, )
@@ -83,10 +85,30 @@ def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	density = fftconvolve(weights, kernel_vals, mode="same")
 	return density
 
-# maybe it's possible to speed it up even more by cutting off v small values
-# profiling - it was profiled against a naive version, allocation of matrices seems to win over naive looping
-# TODO profile to check which batch_size would be optimal
-def compute_kde_2d(x, observations, variance,
+# a wrapper for KDE from sklearn, on grid of size 400 the old version takes 2 minutes and this one 4 seconds
+def compute_kde_2d(x, observations, variance, keep_shape=True):
+	if len(observations.shape) != 2:
+		raise ValueError("observations must be 2D")
+
+	if len(x.shape) == 3:
+		orig_dim = x.shape[:-1]
+		x = x.reshape(-1, 2)
+	else:
+		keep_shape = False
+	if isinstance(variance, float):
+		bandwidth = np.sqrt(variance)
+	else:
+		bandwidth = variance # to allow 'scott'
+	kde = KernelDensity(bandwidth=bandwidth)
+	kde.fit(observations)
+	prob_grid = np.exp(kde.score_samples(x.reshape(-1, 2))) # score_samples yields logprobability
+
+	if keep_shape:
+		return prob_grid.reshape(orig_dim)
+	return prob_grid
+
+# not necessary anymore, keeping it for myself for reference just in case
+def compute_kde_2d_by_hand(x, observations, variance,
                     batch_size=5000, keep_shape=True):
 	"""
 	computes KDE of 2-dimensional observations, returns np.ndarray of shape (M, ).
@@ -123,12 +145,11 @@ def compute_kde_2d(x, observations, variance,
 		return estimates_on_x.reshape(*orig_dim)
 	return np.asarray(estimates_on_x, float)
 
-def compute_kde_scott_2d(x, observations, batch_size=10000, keep_shape=True):
+def compute_kde_scott_2d(x, observations, keep_shape=True):
 	"""
-	wrapper for compute_kde_2d that computes the variance
+	wrapper for compute_kde_2d that itself wraps the sklearn... (artefact from previous no-sklearn variant)
 	"""
-	variance = 1/(len(observations)**(1/6.))
-	return compute_kde_2d(x, observations, variance=variance, keep_shape=keep_shape, batch_size=batch_size)
+	return compute_kde_2d(x, observations, variance='scott', keep_shape=keep_shape)
 
 def compute_kde_scott(x, observations):
 	"""
@@ -226,7 +247,8 @@ def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
 def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
 	q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
 	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
-	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx * dx
+	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
+	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
 	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
 
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):

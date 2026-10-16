@@ -162,7 +162,7 @@ if __name__ == '__main__':
 		interpolation=args.interpolation)
 
 	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
-	                    f"FFT with cutoff in the kernel (if 2D, False here is overridden): {args.with_fft_cutoff}\n"
+	                    f"FFT with cutoff in the kernel: {args.with_fft_cutoff}\n"
 	                    f"Vectorised importance sampling (1D only): {args.fast_is}.\nVerbosity: {args.verbose}.\n")
 	if args.verbose:
 		setup_message += f"Verbosity frequency: {args.verbosity_freq}\n"
@@ -192,7 +192,7 @@ if __name__ == '__main__':
 
 	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}, "
 	      f"grid_size: {args.grid_size}, n of trials: {args.n}")
-	radius = 60 * args.k_scale if args.with_fft_cutoff or dim == 2 else None
+	radius = 60 * args.k_scale if args.with_fft_cutoff else None
 	if args.method.startswith('led'):
 		run_kwargs.update(dict(
 			t_scale=args.t_scale,
