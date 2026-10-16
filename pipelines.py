@@ -16,7 +16,7 @@ from tools import (sample_via_importance_resampling, support_width, support_widt
                    estimate_bounding_radius_2d, comparative_fns_sentinel, sliced_wasserstein_2d)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
-                 _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
+                 _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba, compute_kde_gaussian_1d_numba)
 from logops import print_statistics_for_forget, print_statistics_for_1d_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
@@ -58,7 +58,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 
 	_radius = grid_size * dx if radius is None else radius
 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale)
-	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_fast_approx_1d
+	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_direct_1d_numba
 	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
 	matcher_fn = match_x_to_grid_with_cubic_1d if interpolation == 'cubic' else match_x_to_grid_and_val_1d
 	pbar_length = max(50, int(n_trials / verbosity_freq))
@@ -244,7 +244,7 @@ def run_recurrent_kde_with_data_forgetting_2d():
 # TODO refactor to be similar to the previous one, let the pdf thing happen inside sampler
 def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_samples,
                       descriptive_metrics, comparative_metrics,
-                      verbosity_freq, return_final_samples, update_fn, print_fn, verbose, *args, **kwargs):
+                      verbosity_freq, return_final_samples, update_fn, print_fn, verbose, fast_kde, *args, **kwargs):
 
 	starting_kde = compute_kde(x=grid, observations=starting_dist,
 		                               norm_scale=k_scale)
@@ -264,6 +264,7 @@ def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_sa
 
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = time.perf_counter()
+	kde_func = compute_kde if not fast_kde else compute_kde_gaussian_1d_numba
 	for i in range(n_trials):
 		# first sample through IS
 		# then use this IS to compute new distribution with KDE
@@ -299,7 +300,7 @@ def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_sa
 def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 	k_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
 	descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'],
-	                                  verbosity_freq=10, return_final_samples=False, verbose=False, **kwargs):
+	                                  verbosity_freq=10, return_final_samples=False, verbose=False, fast_kde=True, **kwargs):
 	"""
 
 	n_trials : int
@@ -311,13 +312,13 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
 	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_forget,
 	                         update_fn=update_forgetting, return_final_samples=return_final_samples, verbosity_freq=verbosity_freq,
-	                         verbose=verbose, **kwargs)
+	                         verbose=verbose, fast_kde=fast_kde, **kwargs)
 
 
 def run_recurrent_kde_with_retaining(n_trials, starting_dist, grid,
 				k_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
 				descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'],
-	                                 verbosity_freq=10, return_final_samples=False, verbose=False, **kwargs):
+	                                 verbosity_freq=10, return_final_samples=False, verbose=False, fast_kde=True, **kwargs):
 	"""
 
 	n_trials : int
@@ -329,4 +330,4 @@ def run_recurrent_kde_with_retaining(n_trials, starting_dist, grid,
 	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
 	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_1d_retain,
 	                         update_fn=update_retaining, verbose=verbose, return_final_samples=return_final_samples,
-	                         verbosity_freq=verbosity_freq, **kwargs)
+	                         verbosity_freq=verbosity_freq, fast_kde=fast_kde, **kwargs)

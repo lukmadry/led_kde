@@ -2,7 +2,7 @@ import unittest
 import numpy as np
 import time
 
-from kde import alpha_func, compute_led_kde, compute_kde, sample_led_kde
+from kde import alpha_func, compute_led_kde, compute_kde, sample_led_kde, compute_kde_gaussian_1d_numba
 from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d
 from functools import partial
 from distributions import GaussianMixture, UniformMixture
@@ -132,6 +132,19 @@ def profile_kde(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 
 			average_times.append((g, s, avg))
 	return average_times
 
+def profile_kde_numba(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+	average_times = []
+	# warmup to precompile
+	C = compute_kde_gaussian_1d_numba(np.linspace(-5, 5, 100), unif_mixture.rvs(1000), var=0.01)
+	for g in grid_sizes:
+		for s in sample_sizes:
+			obs = unif_mixture.rvs(s)
+			# print(f"Grid size {g}, sample size {s}")
+			x_grid = np.linspace(-5, 5, g)
+			avg, mint, maxt = profile_function(compute_kde_gaussian_1d_numba, runs=runs, x=x_grid, observations=obs, var=0.01)
+			average_times.append((g, s, avg))
+	return average_times
+
 def profile_kde_cutoff(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
 	average_times = []
 	for g in grid_sizes:
@@ -176,6 +189,8 @@ if __name__ == '__main__':
 		K = 10
 		print("Profiling KDE")
 		kde_avg_times = profile_kde(K)
+		print("Profiling KDE with numba")
+		kde_numba_avg_times = profile_kde_numba(K)
 		print("Profiling KDE with cutoff")
 		kde_cutoff_avg_times = profile_kde_cutoff(K)
 		print("Profiling alpha function")
@@ -183,11 +198,11 @@ if __name__ == '__main__':
 		print("Profiling LED sampling")
 		led_sampling = profile_sampling_led(K)
 
-		for fname, arr in zip(['kde', 'kde_cutoff', 'alpha', 'led'],
-							  [kde_avg_times, kde_cutoff_avg_times, alpha_avg_times, led_sampling]):
+		for fname, arr in zip(['kde', 'kde_cutoff', 'kde_numba',  'alpha', 'led'],
+							  [kde_avg_times, kde_cutoff_avg_times, kde_numba_avg_times, alpha_avg_times, led_sampling]):
 			print(fname)
 			for g, s, avg in arr:
 				print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")
-
-	unittest.main()
+	else:
+		unittest.main()
 

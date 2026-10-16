@@ -45,9 +45,8 @@ if __name__ == '__main__':
 						     "Empirically, it does not seem to influence much, except for very dense grids, "
 						     "for grid_size = 1000 and n_samples = 1e4 on my machine we gain 0.5-1 second per 25 trials."
 						     "The effect is negligible for grid_size = 500, or even grid_size=1000 and n_samples=1e3")
-	parser.add_argument("--fast_kde", action=argparse.BooleanOptionalAction, default=False,
-	                    help="use FFT-binning to compute KDE. Use with caution as it is approximation, not the exact computation."
-	                         "For 25 trials, n_samples = 1e4, grid_size = 1000 it wins 4-5 seconds")
+	parser.add_argument("--fast_kde", action=argparse.BooleanOptionalAction, default=True,
+	                    help="use numba to compute KDE inside alpha function")
 	parser.add_argument("--fast_is", action=argparse.BooleanOptionalAction, default=False,
 	                    help="activates parallelized importance sampling in LED. However I'm not really an expert on importance sampling, "
 	                         "so I'm not sure how to run a diagnosis to make sure that it is correct. I will try to run empirical"
@@ -161,7 +160,7 @@ if __name__ == '__main__':
 		fast=args.fast_kde,
 		interpolation=args.interpolation)
 
-	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
+	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with numba (1D only): {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel: {args.with_fft_cutoff}\n"
 	                    f"Vectorised importance sampling (1D only): {args.fast_is}.\nVerbosity: {args.verbose}.\n")
 	if args.verbose:

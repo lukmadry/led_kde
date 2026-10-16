@@ -2,7 +2,7 @@ import numpy as np
 import math
 from functools import partial
 from numbers import Number
-
+import numba as nb
 import time # for profiling
 
 from scipy.stats import norm, multivariate_normal, uniform
@@ -53,6 +53,46 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	else:
 		raise ValueError("kernel has to be either 'gaussian' or 'uniform'")
 	return val / N
+
+
+@nb.njit(parallel=True, fastmath=True)
+def compute_kde_gaussian_1d_numba(
+	x: np.ndarray, observations: np.ndarray, var: float
+) -> np.ndarray:
+	"""Computes 1D Gaussian Kernel Density Estimation at arbitrary points x.
+
+	Parameters
+	----------
+	x : np.ndarray (M,)
+		1D array of target evaluation points.
+	observations : np.ndarray (N,)
+		1D array of observed sample points X_i.
+	var : float
+		Variance (sigma^2) of the Gaussian kernel.
+
+	Returns
+	-------
+	kde : np.ndarray (M,)
+		Componentwise KDE evaluation: (1/N) sum_{i=1}^N K(x - X_i).
+	"""
+	M = x.shape[0]
+	N = observations.shape[0]
+
+	out = np.zeros(M, dtype=np.float64)
+
+	inv_two_var = 1.0 / (2.0 * var)
+	norm_factor = 1.0 / (np.sqrt(2.0 * np.pi * var) * N)
+	for j in nb.prange(M):
+		x_val = x[j]
+		acc = 0.0
+
+		for i in range(N):
+			diff = x_val - observations[i]
+			acc += np.exp(-diff * diff * inv_two_var)
+
+		out[j] = acc * norm_factor
+
+	return out
 
 def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	"""
@@ -235,6 +275,14 @@ def _alpha_func_direct_1d(grid, observations, t_scale, k_kernel_arr, dx,
 	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
 	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
 	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
+
+def _alpha_func_direct_1d_numba(grid, observations, t_scale, k_kernel_arr, dx,
+                          log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = compute_kde_gaussian_1d_numba(x=grid, observations=observations, var=t_scale)
+	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
+	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
+	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
+
 
 # kde with histograms
 def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
