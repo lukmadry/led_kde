@@ -133,14 +133,14 @@ def match_x_to_grid_with_cubic_1d(x, grid, values_grid, *args, **kwargs):
 
 # I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
-							   raise_error_if_outside=False, interpolation=True):
+							   raise_error_if_outside=False, method='cubic', interpolation=True):
 	"""
 	grid :
 	"""
 
 	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
-		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x) # TODO presumably this wastes time on binary search as well
+		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x, method=method) # TODO presumably this wastes time on binary search as well
 	else:
 		raise NotImplementedError
 #
@@ -322,13 +322,14 @@ def sample_via_importance_resampling(
 	return candidates[resampled_indices], ess
 
 
-def compute_l2_wasserstein(obs_x, obs_y, num_pts):
+def compute_l2_wasserstein_1d(obs_x, obs_y, num_pts):
+	if obs_x.ndim > 1 or obs_y.ndim > 1:
+		raise ValueError("you passed multidimensional arrays to l2_wasserstein_1d, this will result in nonsense values")
 	q = np.linspace(0, 1, num=num_pts)
 	dx = q[1] - q[0]
 	qx = np.quantile(obs_x, q)
 	qy = np.quantile(obs_y, q)
 	return np.sqrt(np.trapezoid(y=np.square(qx - qy), x=q, dx=dx))
-
 
 def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
@@ -351,8 +352,6 @@ def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 # you could refactor it to "projection_estimation" method or something
 def sliced_wasserstein_2d(samples_a, samples_b, num_projections=100, num_pts=1000):
 
-	d = samples_a.shape[1]
-
 	angles = np.random.uniform(0, 2 * np.pi, num_projections)
 	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
 
@@ -362,17 +361,16 @@ def sliced_wasserstein_2d(samples_a, samples_b, num_projections=100, num_pts=100
 		proj_a = samples_a @ proj
 		proj_b = samples_b @ proj
 
-		w1d = compute_l2_wasserstein(proj_a, proj_b, num_pts)
+		w1d = compute_l2_wasserstein_1d(proj_a, proj_b, num_pts)
 		sw2_sum += w1d**2
 
 	return np.sqrt(sw2_sum / num_projections)
 
 def estimate_bounding_radius_2d(samples, num_projections):
-
 	angles = np.random.uniform(0, 2 * np.pi, num_projections)
 	projections = np.stack([np.cos(angles), np.sin(angles)], axis=1)
-
 	max_support = 0
+
 	for proj in projections:
 
 		proj_theta = samples @ proj
@@ -417,7 +415,7 @@ def support_width(observations):
 	return np.max(observations) - np.min(observations)
 
 def support_width_axis(observations, axis=0):
-	return np.max(observations, axis=axis) - np.min(observations, axis=axis)
+	return np.max(observations[:, axis]) - np.min(observations[:, axis])
 
 def descriptive_fns_sentinel(metric_list, dimension):
 	revised_metric_list = []
@@ -436,7 +434,20 @@ def descriptive_fns_sentinel(metric_list, dimension):
 
 def comparative_fns_sentinel(metric_list, dimension):
 	revised_metric_list = []
-
+	if dimension == 1:
+		for m in metric_list:
+			if not m.endswith('2d'):
+				revised_metric_list.append(m)
+	elif dimension == 2:
+		for m in metric_list:
+			if m.endswith('___density'):
+				print("Density based metrics are not supported for 2d")
+				continue
+			elif 'wasserstein' in m and '2d' not in m:
+				revised_metric_list.append('sliced_wasserstein_2d')
+			else:
+				revised_metric_list.append(m)
+	return revised_metric_list
 
 def nr_of_peaks(pdf_on_a_grid):
 	pass

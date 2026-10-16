@@ -378,7 +378,7 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
 def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,
-                              interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
+                              alpha_func_obj=_alpha_func_direct_1d,
                               matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
 	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
                                t_scale=t_scale, k_kernel_arr=k_kernel_arr,
@@ -392,7 +392,7 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 	w = k_sampler(size=n_candidates)
 	idx = np.random.randint(low=0,high=N,size=n_candidates)
 	X = observations[idx] - u - w
-	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=interpolation)
+	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=True)
 	if np.any(alph_weights > -1e-6): #sufficiently small that we can consider it an approximation error
 		alph_weights = np.maximum(alph_weights, 0)
 	else:

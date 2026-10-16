@@ -13,17 +13,17 @@ from tools import (sample_via_importance_resampling, support_width, support_widt
                    StrangeAlphaException, match_x_to_grid_with_cubic_1d, match_x_to_grid_and_val_1d,
                    compute_gaussian_kernel_2d, match_x_to_grid_and_val_2d, compute_gaussian_kernel_1d,
                    compute_l2_wasserstein_1d, compute_kl_divergence, wasserstein_from_pdfs_1d, NegativeProbabilityError,
-                   estimate_bounding_radius_2d, comparative_fns_sentinel)
+                   estimate_bounding_radius_2d, comparative_fns_sentinel, sliced_wasserstein_2d)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is)
-from logops import print_statistics_for_1d_forget, print_statistics_for_1d_retain, build_progress_bar
+from logops import print_statistics_for_forget, print_statistics_for_1d_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width,
-                         'mean_ax0': partial(np.mean, axis=0), 'mean_ax1': partial(np.mean, axis=1),
-                         'sd_ax0': partial(np.std, axis=0), 'sd_ax1': partial(np.std, axis=1),
-                         'median_ax0': partial(np.median, axis=0), 'median_ax1': partial(np.median, axis=1),
+                         'mean_ax0': lambda obs: np.mean(obs[:, 0]), 'mean_ax1': lambda obs: np.mean(obs[:, 1]),
+                         'sd_ax0': lambda obs: np.std(obs[:, 0]), 'sd_ax1': lambda obs: np.std(obs[:, 1]),
+                         'median_ax0': lambda obs: np.median(obs[:, 0]), 'median_ax1': lambda obs: np.median(obs[:, 0]),
                          'support_width_ax0': partial(support_width_axis, axis=0), 'support_width_ax1': partial(support_width_axis, axis=1),
                          'radius_2d': estimate_bounding_radius_2d}
 
@@ -141,10 +141,10 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
     verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_1d_forget,
-                                interpolation=interpolation)
+	                            k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+	                            alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
+	                            fast, led_is, verbose=verbose, update_fn=update_forgetting, print_fn=print_statistics_for_forget,
+	                            interpolation=interpolation)
 
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
@@ -184,8 +184,9 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
 	                            interpolation=interpolation)
 
 def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
-                                              k_scale, t_scale, n_samples, descriptive_metrics, kernel, radius,
-                                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, fast):
+                                              k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+                                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                                              interpolation, verbose, *args, **kwargs):
 	"""
 
 	"""
@@ -198,14 +199,18 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 	t_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * t_scale).rvs
 
 	kernel_arr = compute_gaussian_kernel_2d(grid, radius, k_scale)
+	matcher_fn = partial(match_x_to_grid_and_val_2d, method=interpolation)
+	pbar_length = max(50, int(n_trials / verbosity_freq))
+	descriptive_metrics = descriptive_fns_sentinel(descriptive_metrics, 2)
+	comparative_metrics = comparative_fns_sentinel(comparative_metrics, 2)
 	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 		try:
-			led_samples = sample_led_kde_direct_raw(
+			led_samples = sample_led_kde_direct_raw_fast_is(
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=match_x_to_grid_and_val_2d, ndim=2
+				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=matcher_fn, ndim=2
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")
@@ -218,9 +223,14 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 		local_led_pdf = compute_kde_scott_2d(x=grid, observations=led_samples)
 		all_pdfs.append(local_led_pdf)
 
-		stat = print_statistics_for_1d_forget(local_led_pdf, led_samples, descriptive_metrics, descriptive_functions, i,
-		                        verbosity_freq)
+		stat = print_statistics_for_forget(local_led_pdf, led_samples, descriptive_metrics + comparative_metrics,
+		                                   desc_func_dict=descriptive_functions, i=i,
+		                                   verbosity_freq=verbosity_freq, orig_samples=initial_observations,
+		                                   comp_func_dict=comparative_functions, verbose=verbose)
 		statistics.append(stat)
+		if not verbose:
+			print(build_progress_bar(i, n_trials, pbar_length), end="\r")
+
 		obs = led_samples
 	t1 = datetime.datetime.now() # my IDE complains that it's duplicated but I'm not sure how to not make it so
 	additional_info.update({"time_in_seconds": (t1 - t0).total_seconds()})
@@ -299,7 +309,7 @@ def run_recurrent_kde_with_forgetting(n_trials, starting_dist, grid,
 	"""
 	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
 	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
-	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_1d_forget,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_forget,
 	                         update_fn=update_forgetting, return_final_samples=return_final_samples, verbosity_freq=verbosity_freq,
 	                         verbose=verbose, **kwargs)
 

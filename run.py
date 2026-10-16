@@ -163,7 +163,9 @@ if __name__ == '__main__':
 
 	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with FFT-binning (1D only): {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel (if 2D, False here is overridden): {args.with_fft_cutoff}\n"
-	                    f"Vectorised importance sampling (1D only): {args.fast_is}\n")
+	                    f"Vectorised importance sampling (1D only): {args.fast_is}.\nVerbosity: {args.verbose}.\n")
+	if args.verbose:
+		setup_message += f"Verbosity frequency: {args.verbosity_freq}\n"
 	print(setup_message)
 	if args.dist_type == 'gaussian' and dim == 1:
 		true_mixture = distributions.GaussianMixture(
@@ -225,7 +227,10 @@ if __name__ == '__main__':
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)
 		run_kwargs.update(dict(initial_observations=init_obs, radius=radius))
-		final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
+		if dim == 1:
+			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_1d(**run_kwargs)
+		else:
+			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_retaining_2d(**run_kwargs)
 	else:
 		raise ValueError
 	args_dict['new_info'] = new_info
