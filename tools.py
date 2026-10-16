@@ -133,14 +133,14 @@ def match_x_to_grid_with_cubic_1d(x, grid, values_grid, *args, **kwargs):
 
 # I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
-							   raise_error_if_outside=False, interpolation=True):
+							   raise_error_if_outside=False, method='cubic', interpolation=True):
 	"""
 	grid :
 	"""
 
 	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
-		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x) # TODO presumably this wastes time on binary search as well
+		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x, method=method) 
 	else:
 		raise NotImplementedError
 #
@@ -322,13 +322,12 @@ def sample_via_importance_resampling(
 	return candidates[resampled_indices], ess
 
 
-def compute_l2_wasserstein(obs_x, obs_y, num_pts):
+def compute_l2_wasserstein_1d(obs_x, obs_y, num_pts):
 	q = np.linspace(0, 1, num=num_pts)
 	dx = q[1] - q[0]
 	qx = np.quantile(obs_x, q)
 	qy = np.quantile(obs_y, q)
 	return np.sqrt(np.trapezoid(y=np.square(qx - qy), x=q, dx=dx))
-
 
 def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
@@ -346,6 +345,8 @@ def wasserstein_from_pdfs_1d(pdf_p, pdf_q, grid, num_quantiles=1000):
 
 	return np.sqrt(np.trapezoid((inv_cdf_p - inv_cdf_q)**2, q))
 
+def wasserstein_from_pdfs_2d(pdf_p, pdf_q, grid, num_quantiles):
+	pass
 
 def compute_kl_divergence(obs_x, obs_y, nr_bins=50, eps=1e-8):
 	min_obs = min(np.min(obs_x), np.min(obs_y))
@@ -380,6 +381,28 @@ def get_git_commit_gitpython():
 # statistics of distributions that we report
 def support_width(observations):
 	return np.max(observations) - np.min(observations)
+
+def support_width_axis(observations, axis=0):
+	return np.max(observations, axis=axis) - np.min(observations, axis=axis)
+
+def descriptive_fns_sentinel(metric_list, dimension):
+	revised_metric_list = []
+	if dimension == 1:
+		for m in metric_list:
+			if '_ax' in m:
+				print("In a one-dimensional setting we will not need axis-aware metrics, removing ", m)
+			else:
+				revised_metric_list.append(m)
+	if dimension == 2:
+		for m in metric_list:
+			if '_ax' not in m:
+				revised_metric_list.extend([m + '_ax0', m + '_ax1'])
+
+	return revised_metric_list
+
+def comparative_fns_sentinel(metric_list, dimension):
+	revised_metric_list = []
+
 
 def nr_of_peaks(pdf_on_a_grid):
 	pass

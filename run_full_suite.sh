@@ -1,36 +1,54 @@
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 4 --scales 1 1 --weights 10 10 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 4 --scales 1 1 --weights 20 5 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers -4 4 --scales 1 1 --weights 5 20 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
-python3 run.py --n_samples 5000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 4 --scales 1 1 --weights 10 10 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 4 --scales 1 1 --weights 20 5 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -4 4 --scales 1 1 --weights 5 20 --dist_type gaussian --lower_bd -10 --upper_bd 10 --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 2 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 1 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 3 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 4 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 5 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 6 1 --weights 1 1 --dist_type uniform --method kde_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+
+# the two towers below are to be repeated many times + swap the towers
+python3 run.py --n_samples 2000 --centers -3 3 --widths 2 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 1 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 3 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 4 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 5 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers -3 3 --widths 6 1 --weights 1 1 --dist_type uniform --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 3000 --lower_bd -7 --upper_bd 7 --fast_is --no-verbose
+
+# looking for a fixed point
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.02 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.02 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.01 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.001 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 1 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.5 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+python3 run.py --n_samples 2000 --centers 0 --scales 0.25 --dist_type gaussian --method led_forget --t_scale 0.04 --k_scale 0.04 --n 250 --grid_size 2000 --fast_is --no-verbose
+
+# the same as at the beginning but with retain
 python3 run.py --n_samples 50 --n_init_samples 1000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_retain --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
 python3 run.py --n_samples 50 --n_init_samples 1000 --centers -4 -2 0 2 4 --widths 1 --weights 10 1 15 1 10 --dist_type uniform --method led_retain --t_scale 0.0001 --k_scale 0.0002 --n 250 --grid_size 2000 --fast_is --no-verbose
 python3 run.py --n_samples 50 --n_init_samples 1000 --centers -4 -3 -2 -1 0 1 2 3 4 --widths 1 --weights 10 3 5 3 1 3 5 6 10 --dist_type uniform --method led_retain --t_scale 0.001 --k_scale 0.002 --n 250 --grid_size 2000 --fast_is --no-verbose
