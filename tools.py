@@ -76,12 +76,17 @@ def exact_gaussian_1d_cutoff(x, var):
 def exact_gaussian_2d(x, var):
 	"""
 
-	x: np.ndarray (N, K, 2)
+	x: np.ndarray (N, K)
 	var: float
 
 	returns np.ndarray (N, K)
 	"""
-	return 1/(2.0*np.pi*var) * np.exp(-np.sum(np.square(x), axis=-1)/(2.0*var))
+
+	norm_factor = 1.0 / (2.0 * np.pi * var)
+	kernel = x / (-2.0 * var)
+	np.exp(kernel, out=kernel)
+	kernel *= norm_factor
+	return kernel
 
 def exact_unif_1d(x, width):
 	return np.where(x > -width & x < width, 2/width, 0)
@@ -153,7 +158,8 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 # 		raise NotImplementedError("x has to be one or two-dimensional")
 
 def compute_gaussian_kernel_1d(radius, dx, var):
-	vals = np.arange(-radius, radius + 0.5 * dx, step=dx)
+	n = int(np.round(2.0 * radius / dx)) | 1 # bitwise or, moves up to odd value if even, does nothing if already odd
+	vals = np.linspace(-radius, radius, num=n)
 	return exact_gaussian_1d(vals, var)
 
 def compute_kernel_2d(grid, radius, var, func, ret_ds=False):
@@ -168,30 +174,25 @@ def compute_kernel_2d(grid, radius, var, func, ret_ds=False):
 	dy1 = y1_1d[1] - y1_1d[0]
 	dy2 = y2_1d[1] - y2_1d[0]
 
-	if radius is None:
-		d1 = np.arange(
-			-(len(y1_1d) - 1) * dy1, (len(x1_1d) - 1) * dx1 + 0.5 * dx1, step=dx1
+	n1 = int(2*radius / dx1) | 1
+	n2 = int(2*radius / dx2) | 1
+	d1 = np.linspace(
+		-radius, radius, num=n1
+	)
+	d2 = np.linspace(
+		-radius, radius, num=n2
 		)
-		d2 = np.arange(
-			-(len(y2_1d) - 1) * dy2, (len(x2_1d) - 1) * dx2 + 0.5 * dx2, step=dx2
-		)
-	else:
-		d1 = np.arange(
-			-radius, radius + dx1, step=dx1
-		)
-		d2 = np.arange(
-			-radius, radius + dx2, step=dx2
-		)
-	D1, D2 = np.meshgrid(d1, d2)
-	diff_stack = np.dstack([D1, D2])
-	kernel_arr = func(diff_stack, var)
+	S = np.empty((n1, n2), dtype=np.float64)
+	S[:] = np.square(d1)[None, :]
+	S += np.square(d2)[:, None]
+	kernel_arr = func(S, var)
 	if ret_ds:
 		return kernel_arr, dy1, dy2
 	return kernel_arr
 
 # wrapper
 def compute_gaussian_kernel_2d(grid, radius, var):
-	return compute_kernel_2d(grid, radius, var, exact_gaussian_2d)
+	return compute_kernel_2d(grid, radius, var, exact_gaussian_2d, ret_ds=False)
 
 
 def compute_uniform_kernel(radius):

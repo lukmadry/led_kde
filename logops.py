@@ -16,10 +16,10 @@ def build_progress_bar(i, M, length=50, p_sign='@'):
 	return s
 
 # we may need some 2d version of this
-def print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict,
-                                   i, verbosity_freq, verbose=True, prefix_stat=None,
-                                   comp_func_dict=None, orig_samples=None,
-                                   orig_density=None, *args, **kwargs):
+def print_statistics_for_forget(local_pdf, local_samples, metrics, desc_func_dict,
+                                i, verbosity_freq, verbose=True, prefix_stat=None,
+                                comp_func_dict=None, orig_samples=None,
+                                orig_density=None, *args, **kwargs):
 	"""
 	Helper function used in the main pass to print statistics of the current distribution.
 
@@ -69,18 +69,21 @@ def print_statistics_for_1d_retain(local_pdf, local_samples, metrics,
                                    desc_func_dict, i, verbosity_freq,
                                    n_samples, grid, verbose, comp_func_dict, orig_samples, orig_density):
 
-	new_stats = print_statistics_for_1d_forget(local_pdf, local_samples, metrics, desc_func_dict, i,
-	                                           verbosity_freq, verbose=verbose,
-	                                           orig_samples=orig_samples, prefix_stat="A_",
-	                                           comp_func_dict=comp_func_dict, orig_density=orig_density)
+	new_stats = print_statistics_for_forget(local_pdf, local_samples, metrics, desc_func_dict, i,
+	                                        verbosity_freq, verbose=verbose,
+	                                        orig_samples=orig_samples, prefix_stat="A_",
+	                                        comp_func_dict=comp_func_dict, orig_density=orig_density)
 	if n_samples > 50:
 		new_samples = local_samples[-n_samples:]
 		new_pdf = compute_kde_scott(x=grid, observations=local_samples)
-		gen_stats = print_statistics_for_1d_forget(new_pdf, new_samples, metrics, desc_func_dict, i,
-		                                           verbosity_freq, verbose=verbose, prefix_stat="G_",
-		                                           orig_samples=orig_samples)
+		gen_stats = print_statistics_for_forget(new_pdf, new_samples, metrics, desc_func_dict, i,
+		                                        verbosity_freq, verbose=verbose, prefix_stat="G_",
+		                                        orig_samples=orig_samples)
 		new_stats.update(gen_stats)
 	return new_stats
+
+def print_statistics_for_2d_forget(local_pdf, local_samples, metrics, desc_func_dict, i, verbosity_freq):
+	pass
 
 def append_to_jsonl(filepath: str, new_record: dict) -> None:
 	with open(filepath, mode="a", encoding="utf-8") as f:
@@ -195,7 +198,7 @@ def log_results(all_distributions,
 		fig_final.suptitle("Top : original distributions, bottom : final distribution")
 		fig_final.savefig(os.path.join(log_dir, "density_plots_led.png"))
 
-	if init_samples is not None and final_samples is not None:
+	if ndim == 1 and init_samples is not None and final_samples is not None:
 		print("saving histograms of initial and final distribution")
 
 		fig_hist, axes_hists = plt.subplots(1, 2, figsize=(10, 5))
