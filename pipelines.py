@@ -277,7 +277,7 @@ def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_sa
 
 
 		current_obs = update_fn(current_obs, samples_from_current_pdf)
-		kde_from_samples = compute_kde(x=grid, observations=current_obs,
+		kde_from_samples = kde_func(x=grid, observations=current_obs,
 		                               norm_scale=k_scale)  # produces values of kde on grid, inferred from current_obs
 
 		all_dists.append(kde_from_samples)

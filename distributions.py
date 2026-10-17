@@ -98,7 +98,6 @@ class UniformMixture(Distribution):
 			widths = [widths]
 
 		self.widths = np.array(widths)
-
 		self.distributions = []
 
 		if not ((len(self.widths) == self.N) or len(self.widths) == 1):
@@ -144,11 +143,11 @@ class UniformBox:
 class UniformBoxMixture(Distribution):
 	def __init__(self, centers, shapes, weights=None, random_state=None):
 		super().__init__(centers, weights, random_state=random_state)
-
 		self.shapes = np.array(shapes)
 		if self.centers.ndim != self.shapes.ndim and self.centers.shape[0] != self.shapes.shape[0]:
 			raise ValueError("centers and shapes should have the same dimensions")
-
+		if self.shapes.shape[0] != self.N:
+			self.shapes = [self.shapes[0]] * self.N
 		for (cx, cy), (wx, wy) in zip(self.centers, self.shapes):
 			self.distributions.append(UniformBox(corner=(cx-wx/2, cy-wy/2), shapes=(wx, wy)))
 

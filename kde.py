@@ -59,22 +59,7 @@ def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 def compute_kde_gaussian_1d_numba(
 	x: np.ndarray, observations: np.ndarray, var: float
 ) -> np.ndarray:
-	"""Computes 1D Gaussian Kernel Density Estimation at arbitrary points x.
 
-	Parameters
-	----------
-	x : np.ndarray (M,)
-		1D array of target evaluation points.
-	observations : np.ndarray (N,)
-		1D array of observed sample points X_i.
-	var : float
-		Variance (sigma^2) of the Gaussian kernel.
-
-	Returns
-	-------
-	kde : np.ndarray (M,)
-		Componentwise KDE evaluation: (1/N) sum_{i=1}^N K(x - X_i).
-	"""
 	M = x.shape[0]
 	N = observations.shape[0]
 
@@ -93,6 +78,25 @@ def compute_kde_gaussian_1d_numba(
 		out[j] = acc * norm_factor
 
 	return out
+
+def compute_kde_gaussian_numba_wrapper(x, observations, var):
+	"""Computes 1D Gaussian Kernel Density Estimation at arbitrary points x.
+
+		Parameters
+		----------
+		x : np.ndarray (M,)
+			1D array of target evaluation points.
+		observations : np.ndarray (N,)
+			1D array of observed sample points X_i.
+		var : float
+			Variance (sigma^2) of the Gaussian kernel.
+
+		Returns
+		-------
+		kde : np.ndarray (M,)
+			Componentwise KDE evaluation: (1/N) sum_{i=1}^N K(x - X_i).
+		"""
+	return compute_kde_gaussian_1d_numba(x, observations, var)
 
 def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	"""
@@ -147,6 +151,15 @@ def compute_kde_2d(x, observations, variance, keep_shape=True):
 		return prob_grid.reshape(orig_dim)
 	return prob_grid
 
+# actually we're not using this, but it was a hypothesis which remains in a profiling suite
+def compute_kde_1d_sklearn(x, observations, variance):
+
+	kde = KernelDensity(bandwidth=np.sqrt(variance))
+	kde.fit(observations.reshape(-1, 1))
+	prob_grid = np.exp(kde.score_samples(x.reshape(-1, 1)))  # score_samples yields logprobability
+
+	return prob_grid
+
 # not necessary anymore, keeping it for myself for reference just in case
 def compute_kde_2d_by_hand(x, observations, variance,
                     batch_size=5000, keep_shape=True):
@@ -184,6 +197,31 @@ def compute_kde_2d_by_hand(x, observations, variance,
 	if keep_shape:
 		return estimates_on_x.reshape(*orig_dim)
 	return np.asarray(estimates_on_x, float)
+
+@nb.njit(parallel=True, fastmath=True)
+def _kde_2d_kernel(x: np.ndarray, obs: np.ndarray, variance: float) -> np.ndarray:
+	M = x.shape[0]
+	N = obs.shape[0]
+
+	out = np.empty(M, dtype=np.float64)
+
+	inv_two_var = 1.0 / (2.0 * variance)
+	norm_factor = 1.0 / (2.0 * np.pi * variance * N)
+
+	for j in nb.prange(M):
+		x0 = x[j, 0]
+		x1 = x[j, 1]
+		acc = 0.0
+
+		for i in range(N):
+			dx0 = x0 - obs[i, 0]
+			dx1 = x1 - obs[i, 1]
+			sq_dist = dx0 * dx0 + dx1 * dx1
+			acc += np.exp(-sq_dist * inv_two_var)
+
+		out[j] = acc * norm_factor
+
+	return out
 
 def compute_kde_scott_2d(x, observations, keep_shape=True):
 	"""
@@ -287,6 +325,7 @@ def _alpha_func_direct_1d_numba(grid, observations, t_scale, k_kernel_arr, dx,
 # kde with histograms
 def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
                             log_eps=1e-10, denom_eps=1e-8):
+	raise NotImplementedError("this method does not work very well and is rather untested")
 	q_L_approx = compute_kde_binned_fft(x=grid, observations=observations, norm_scale=t_scale, dx=dx)
 	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
 	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx

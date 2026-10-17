@@ -2,11 +2,12 @@ import unittest
 import numpy as np
 import time
 
-from kde import alpha_func, compute_led_kde, compute_kde, sample_led_kde, compute_kde_gaussian_1d_numba
+from kde import (alpha_func, compute_led_kde, compute_kde, sample_led_kde,
+                 compute_kde_gaussian_numba_wrapper, compute_kde_binned_fft, compute_kde_1d_sklearn,
+                 _kde_2d_kernel, compute_kde_2d)
 from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d
 from functools import partial
-from distributions import GaussianMixture, UniformMixture
-from run import run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_1d
+from distributions import GaussianMixture, UniformMixture, UniformBoxMixture
 
 # we should check its approximate symmetry if the input distribution is symmetric
 class TestAlphaFunc(unittest.TestCase):
@@ -99,6 +100,46 @@ class TestGaussianMixture(unittest.TestCase):
 		g.rvs(100)
 		g.pdf(np.linspace(-5, 5, 100))
 
+
+class TestApproximations(unittest.TestCase):
+
+	unif_mixture = UniformMixture(centers=[-2, 2], widths=[1, 1])
+	gauss_mixture = GaussianMixture(centers=[-2, 2], scales=[1, 1])
+	var = 1e-1
+	xgrid = np.linspace(-5, 5, num=1001)
+	dx = xgrid[1] - xgrid[0]
+
+	unif_box_mixture = UniformBoxMixture(centers=list(zip([-2, -1, 0, 1, 2, -2, -1, 0, 1, 2, -2, -1, 0, 1, 2],
+	                                                    [-1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1,1,1,1])),
+	                                     shapes=[[1, 1]], weights=[10, 5, 1, 5, 10, 1, 3, 9, 3, 1, 5, 10, 1, 10, 7])
+
+	def test_kde_binning(self):
+
+		unif_samples = self.unif_mixture.rvs(1000)
+		kde_gaussians_gt = compute_kde_gaussian_numba_wrapper(self.xgrid, unif_samples, self.var)
+		kde_binned = compute_kde_binned_fft(self.xgrid, unif_samples, self.var, self.dx)
+		print(f"Error between ground truth gaussians and KDE is: {np.max(np.abs(kde_gaussians_gt - kde_binned))}")
+
+	def test_kde_sklearn(self):
+
+		unif_samples = self.unif_mixture.rvs(1000)
+		gaus_samples = self.gauss_mixture.rvs(1000)
+		kde_unif_gt = compute_kde_gaussian_numba_wrapper(self.xgrid, unif_samples, self.var)
+		kde_gaus_gt = compute_kde_gaussian_numba_wrapper(self.xgrid, gaus_samples, self.var)
+
+		kde_sklearn_unif = compute_kde_1d_sklearn(self.xgrid, unif_samples, self.var)
+		kde_sklearn_gaus = compute_kde_1d_sklearn(self.xgrid, gaus_samples, self.var)
+
+		er_unif = np.max(np.abs(kde_unif_gt - kde_sklearn_unif))
+		er_gaus = np.max(np.abs(kde_gaus_gt - kde_sklearn_gaus))
+
+		self.assertTrue(er_unif < 1e-10)
+		self.assertTrue(er_gaus < 1e-10)
+
+	def test_kde_2d_sklearn(self):
+
+		pass
+
 # profiling
 def profile_function(func, runs = 5, verbose=False, *args, **kwargs):
 	"""Executes a function multiple times and prints runtime statistics."""
@@ -119,6 +160,9 @@ def profile_function(func, runs = 5, verbose=False, *args, **kwargs):
 	return (avg_time, min_time, max_time)
 
 unif_mixture = UniformMixture(centers=[-2, 2], widths=[1, 1])
+unif_box_mixture = UniformBoxMixture(centers=list(zip([-2, -1, 0, 1, 2, -2, -1, 0, 1, 2, -2, -1, 0, 1, 2],
+	                                                    [-1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1,1,1,1])),
+	                                     shapes=[[1, 1]], weights=[10, 5, 1, 5, 10, 1, 3, 9, 3, 1, 5, 10, 1, 10, 7])
 
 # TODO abstract it away, no need to write a separate loop for all of them
 def profile_kde(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
@@ -132,16 +176,56 @@ def profile_kde(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 
 			average_times.append((g, s, avg))
 	return average_times
 
-def profile_kde_numba(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+def profile_kde_sklearn_1d(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
 	average_times = []
-	# warmup to precompile
-	C = compute_kde_gaussian_1d_numba(np.linspace(-5, 5, 100), unif_mixture.rvs(1000), var=0.01)
 	for g in grid_sizes:
 		for s in sample_sizes:
 			obs = unif_mixture.rvs(s)
 			# print(f"Grid size {g}, sample size {s}")
 			x_grid = np.linspace(-5, 5, g)
-			avg, mint, maxt = profile_function(compute_kde_gaussian_1d_numba, runs=runs, x=x_grid, observations=obs, var=0.01)
+			avg, mint, maxt = profile_function(compute_kde_1d_sklearn, runs=runs, x=x_grid, observations=obs, variance=0.01)
+			average_times.append((g, s, avg))
+	return average_times
+
+def profile_kde_2d_numba(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+	average_times = []
+	for g in grid_sizes:
+		grid_x, grid_y = np.linspace(-5, 5, num=g), np.linspace(-5, 5,num=g)
+		grid = np.meshgrid(grid_x, grid_y)
+		grid = np.dstack(grid)
+
+		for s in sample_sizes:
+			obs = unif_box_mixture.rvs(s)
+			# print(f"Grid size {g}, sample size {s}")
+			avg, mint, maxt = profile_function(_kde_2d_kernel, runs=runs, x=grid, obs=obs, variance=0.01)
+			average_times.append((g, s, avg))
+	return average_times
+
+def profile_kde_2d_sklearn(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+	average_times = []
+	for g in grid_sizes:
+		grid_x, grid_y = np.linspace(-5, 5, num=g), np.linspace(-5, 5,num=g)
+		grid = np.meshgrid(grid_x, grid_y)
+		grid = np.dstack(grid)
+
+		for s in sample_sizes:
+			obs = unif_box_mixture.rvs(s)
+			# print(f"Grid size {g}, sample size {s}")
+			avg, mint, maxt = profile_function(compute_kde_2d, runs=runs, x=grid, observations=obs, variance=0.01)
+			average_times.append((g, s, avg))
+	return average_times
+
+
+def profile_kde_numba(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+	average_times = []
+	# warmup to precompile
+	C = compute_kde_gaussian_numba_wrapper(np.linspace(-5, 5, 100), unif_mixture.rvs(1000), var=0.01)
+	for g in grid_sizes:
+		for s in sample_sizes:
+			obs = unif_mixture.rvs(s)
+			# print(f"Grid size {g}, sample size {s}")
+			x_grid = np.linspace(-5, 5, g)
+			avg, mint, maxt = profile_function(compute_kde_gaussian_numba_wrapper, runs=runs, x=x_grid, observations=obs, var=0.01)
 			average_times.append((g, s, avg))
 	return average_times
 
@@ -191,6 +275,12 @@ if __name__ == '__main__':
 		kde_avg_times = profile_kde(K)
 		print("Profiling KDE with numba")
 		kde_numba_avg_times = profile_kde_numba(K)
+		print("Profiling KDE 2D with numba")
+		kde_numba_2d = profile_kde_numba(K)
+		print("Profiling KDE with sklearn")
+		kde_sklearn = profile_kde_sklearn_1d(K)
+		# print("Profiling KDE 2d with sklearn") takes forever, will be dropped in the main pipeline
+		# kde_sklearn_2d = profile_kde_2d_sklearn(K)
 		print("Profiling KDE with cutoff")
 		kde_cutoff_avg_times = profile_kde_cutoff(K)
 		print("Profiling alpha function")
@@ -198,8 +288,10 @@ if __name__ == '__main__':
 		print("Profiling LED sampling")
 		led_sampling = profile_sampling_led(K)
 
-		for fname, arr in zip(['kde', 'kde_cutoff', 'kde_numba',  'alpha', 'led'],
-							  [kde_avg_times, kde_cutoff_avg_times, kde_numba_avg_times, alpha_avg_times, led_sampling]):
+		for fname, arr in zip(['kde', 'kde_cutoff', 'kde_numba',  'alpha',
+		                       'led', 'kde_sklearn', 'kde_2d_numba'],
+							  [kde_avg_times, kde_cutoff_avg_times, kde_numba_avg_times, alpha_avg_times,
+							   led_sampling, kde_sklearn, kde_numba_2d]):
 			print(fname)
 			for g, s, avg in arr:
 				print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")
