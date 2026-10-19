@@ -8,11 +8,12 @@ import os
 
 # other parts of the project
 import distributions
-from tools import support_width, run_dimension_consistency_check
+from tools import support_width, run_dimension_consistency_check, validate_distribution_args
 from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
 from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
-                       run_recurrent_kde_with_retaining,
-                       run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d)
+                       run_recurrent_kde_with_retaining, run_recurrent_led_with_data_retaining_2d,
+                       run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d,
+                       run_recurrent_kde_with_data_forgetting_2d)
 
 
 if __name__ == '__main__':
@@ -65,7 +66,7 @@ if __name__ == '__main__':
 																 "By default only method is considered")
 
 	# distribution arguments
-	parser.add_argument("--dist_type", default='gaussian',
+	parser.add_argument("--dist_type",
 						choices=['gaussian', 'uniform'], help="basic building distribution of an initial mixture")
 
 	# one dimensional arguments
@@ -89,6 +90,13 @@ if __name__ == '__main__':
 	parser.add_argument("--widths_y", nargs='+', type=float)
 	parser.add_argument("--weights", nargs='+',
 						type=float, help="weights of mixtures. Has to be the same length as centers")
+
+	# special distributions
+	parser.add_argument("--spiral", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--spiral_samples", default=100, type=int)
+	parser.add_argument("--spiral_kde", default=0.02, type=float)
+
+	parser.add_argument("--chessboard", action=argparse.BooleanOptionalAction, default=False)
 
 	# kde or led-kde arguments
 	parser.add_argument("--kernel", default='gaussian',
@@ -137,6 +145,8 @@ if __name__ == '__main__':
 		exit()
 
 	dim = run_dimension_consistency_check(args)
+
+	validate_distribution_args(args, dim)
 	if dim == 1:
 		grid = np.linspace(args.lower_bd, args.upper_bd, num=args.grid_size)
 		dx = grid[1] - grid[0]
@@ -160,9 +170,9 @@ if __name__ == '__main__':
 		fast=args.fast_kde,
 		interpolation=args.interpolation)
 
-	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with numba (1D only): {args.fast_kde}\n"
+	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with numba: {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel: {args.with_fft_cutoff}\n"
-	                    f"Vectorised importance sampling (1D only): {args.fast_is}.\nVerbosity: {args.verbose}.\n")
+	                    f"Vectorised importance sampling: {args.fast_is}.\nVerbosity: {args.verbose}.\n")
 	if args.verbose:
 		setup_message += f"Verbosity frequency: {args.verbosity_freq}\n"
 	print(setup_message)
@@ -188,6 +198,10 @@ if __name__ == '__main__':
 			shapes=widths,
 			weights=args.weights
 		)
+	elif dim == 2 and args.spiral:
+		true_mixture = distributions.build_spiral_distribution(args.spiral_samples, args.spiral_kde)
+	else:
+		raise NotImplementedError
 
 	print(f"Testing {args.method} with t: {args.t_scale}, k: {args.k_scale}, N: {args.n_samples}, "
 	      f"grid_size: {args.grid_size}, n of trials: {args.n}")
@@ -210,8 +224,10 @@ if __name__ == '__main__':
 			starting_dist=init_obs,
             n_candidates=args.n_samples*args.cands_multiplier)
 		)
-		if args.method == 'kde_forget':
+		if args.method == 'kde_forget' and dim == 1:
 			final_samples, all_dist, stat, new_info = run_recurrent_kde_with_forgetting(**run_kwargs)
+		elif args.method == 'kde_forget' and dim == 2: # there is something wrong because it takes forever or there is an error with bounds
+			final_samples, all_dist, stat, new_info = run_recurrent_kde_with_data_forgetting_2d(**run_kwargs)
 		else:
 			final_samples, all_dist, stat, new_info = run_recurrent_kde_with_retaining(**run_kwargs)
 	elif args.method == 'led_forget':

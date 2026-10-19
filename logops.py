@@ -65,9 +65,9 @@ def print_statistics_for_forget(local_pdf, local_samples, metrics, desc_func_dic
 
 	return stat
 
-def print_statistics_for_1d_retain(local_pdf, local_samples, metrics,
-                                   desc_func_dict, i, verbosity_freq,
-                                   n_samples, grid, verbose, comp_func_dict, orig_samples, orig_density):
+def print_statistics_for_retain(local_pdf, local_samples, metrics,
+                                desc_func_dict, i, verbosity_freq,
+                                n_samples, grid, verbose, comp_func_dict, orig_samples, orig_density):
 
 	new_stats = print_statistics_for_forget(local_pdf, local_samples, metrics, desc_func_dict, i,
 	                                        verbosity_freq, verbose=verbose,

@@ -12,7 +12,7 @@ from sklearn.neighbors import KernelDensity
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
                    match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, convolve_cont_grid_1d_with_kernel,
-                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError)
+                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError, none_sentinel)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
@@ -199,9 +199,9 @@ def compute_kde_2d_by_hand(x, observations, variance,
 	return np.asarray(estimates_on_x, float)
 
 @nb.njit(parallel=True, fastmath=True)
-def _kde_2d_kernel(x: np.ndarray, obs: np.ndarray, variance: float) -> np.ndarray:
+def _kde_2d_kernel(x: np.ndarray, observations: np.ndarray, variance: float) -> np.ndarray:
 	M = x.shape[0]
-	N = obs.shape[0]
+	N = observations.shape[0]
 
 	out = np.empty(M, dtype=np.float64)
 
@@ -214,8 +214,8 @@ def _kde_2d_kernel(x: np.ndarray, obs: np.ndarray, variance: float) -> np.ndarra
 		acc = 0.0
 
 		for i in range(N):
-			dx0 = x0 - obs[i, 0]
-			dx1 = x1 - obs[i, 1]
+			dx0 = x0 - observations[i, 0]
+			dx1 = x1 - observations[i, 1]
 			sq_dist = dx0 * dx0 + dx1 * dx1
 			acc += np.exp(-sq_dist * inv_two_var)
 
@@ -223,11 +223,31 @@ def _kde_2d_kernel(x: np.ndarray, obs: np.ndarray, variance: float) -> np.ndarra
 
 	return out
 
+# wrapper for the function above to turn on IDE autocompletion
+def compute_kde_gaussian_2d_numba(x, observations, norm_scale=None, keep_shape=True, variance=None):
+	none_sentinel(norm_scale, variance) # backwards compatibility
+	if norm_scale is None:
+		norm_scale = variance
+
+	if len(x.shape) == 3:
+		orig_dim = x.shape[:-1]
+		x = x.reshape(-1, 2)
+	else:
+		keep_shape = False
+
+	kde_vals = _kde_2d_kernel(x, observations, norm_scale)
+	if keep_shape:
+		return kde_vals.reshape(orig_dim)
+	return kde_vals
+
 def compute_kde_scott_2d(x, observations, keep_shape=True):
 	"""
 	wrapper for compute_kde_2d that itself wraps the sklearn... (artefact from previous no-sklearn variant)
 	"""
-	return compute_kde_2d(x, observations, variance='scott', keep_shape=keep_shape)
+	N = observations.shape[0]
+	sddev = N**(-1/6.)
+
+	return compute_kde_gaussian_2d_numba(x, observations, sddev**2, keep_shape=keep_shape)
 
 def compute_kde_scott(x, observations):
 	"""
@@ -253,6 +273,13 @@ def kde_sampled_pdf_wrapper(x, grid, kde):
 
 def kde_sampled_pdf_func(grid, kde):
 	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
+
+
+def kde_sampled_pdf_func_2d(grid, kde):
+	def fn(x):
+		return match_x_to_grid_and_val_2d(x, grid, kde, interpolation=True)
+
+	return fn
 
 def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaussian',
                filter_denom=False, denom_eps=1e-3, pos_threshold=1e-6):
@@ -337,6 +364,14 @@ def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps
 	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
 	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
 	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
+
+def _alpha_func_direct_2d_numba(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = _kde_2d_kernel(x=grid, observations=observations, variance=t_scale)
+	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
+	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
+	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
+	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
+
 
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
@@ -484,6 +519,7 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
 	return vals
 
 # faster variant, to be tested if it gives the same exact thing
+# can it work out of the box with 2D ? yes I think it does
 def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,

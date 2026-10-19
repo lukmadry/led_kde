@@ -47,6 +47,22 @@ def run_dimension_consistency_check(args):
 	elif dim_one_not_none == 0 and dim_two_not_none == 0:
 		raise ValueError("you did not pass arguments for any of possible dimensions.")
 
+def validate_distribution_args(args, dim):
+	arguments_passed = 0
+	if args.dist_type is not None:
+		arguments_passed += 1
+	if args.spiral:
+		arguments_passed += 1
+	if args.chessboard:
+		arguments_passed += 1
+	if arguments_passed != 1:
+		raise ValueError(f"only one of dist_type, spiral, chessboard can be passed, yet you passed {arguments_passed}. "
+		                 f"By default spiral and chessboard are set to false. You passed: {args.dist_type}, {args.spiral}, {args.chessboard}")
+
+	if dim == 1 and (args.spiral or args.chessboard):
+		raise ValueError(f"Spiral and chessboard are only available in dimension one, "
+		                 f"set dist_type to either gaussian or uniform")
+
 def exact_gaussian_1d(x, var):
 	"""
 	computes 1/sqrt(2 * \pi * var) * exp( - x^2 / (2* var) ).
@@ -145,7 +161,8 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 
 	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
-		return interpn(points=(xlinspace, ylinspace), values=values_grid, xi=x, method=method) # TODO presumably this wastes time on binary search as well
+		return interpn(points=(xlinspace, ylinspace), values=values_grid,
+		               xi=x, method=method, bounds_error=False) # TODO presumably this wastes time on binary search as well
 	else:
 		raise NotImplementedError
 #

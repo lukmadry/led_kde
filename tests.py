@@ -61,18 +61,6 @@ class TestMatching(unittest.TestCase):
 		res = match_x_to_grid_and_val_1d(propx, grid=x, values_grid=y, interpolation=True)
 		self.assertTrue(np.allclose(res, np.array([0.2533, 0.496 , 0.6536, 1.4475])))
 
-	# I abandoned the routing
-	# def test_matching_routing(self):
-	#
-	# 	xg = np.linspace(-5, 5, 11)
-	# 	u = np.asarray([-3.45, 3.23])
-	# 	res = match_x_to_grid_and_val(x=xg, grid=u, values_grid=u, interpolation=False)
-	# 	self.assertTrue(isinstance(res, np.ndarray))
-	# 	self.assertTrue(res.ndim == 1)
-	#
-	# 	with self.assertRaises(expected_exception=IndexError):
-	# 		match_x_to_grid_and_val(x=xg.reshape(-1, 1), grid=u, values_grid=u, interpolation=False)
-
 class TestGaussianMixture(unittest.TestCase):
 	def test_gmixture_creation(self):
 		GaussianMixture(centers=0, scales=2)

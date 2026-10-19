@@ -2,6 +2,9 @@ import numpy as np
 from scipy.stats import norm, multivariate_normal, uniform, rv_continuous
 from numbers import Number
 
+from kde import kde_sampled_pdf_func_2d, kde_sampled_pdf_func, compute_kde_gaussian_2d_numba
+
+
 # base class that will allow us to easily add distributions together if needed
 # TODO overload + operator to add distributions
 class Distribution:
@@ -52,6 +55,12 @@ class Distribution:
 			for i in idx:
 				samples.append(self.distributions[i].rvs(random_state=self.seed).flatten())
 		return np.array(samples)
+
+	def extend(self, distribution):
+		self.distributions.extend(distribution.distributions)
+		self.weights.extend(distribution.weights)
+		self.centers = np.concatenate([self.centers, distribution.centers], axis=0)
+
 
 class GaussianMixture(Distribution):
 	def __init__(self, centers, scales, weights=None, scale_is_variance=False, random_state=None):
@@ -153,21 +162,17 @@ class UniformBoxMixture(Distribution):
 
 		self.multivar = True
 
-# will encapsulate kde for pdf and is for rvs
-class CustomDistribution:
-	def __init__(self, init_samples, sigma=0.02):
-		self.init_samples = init_samples
-		self.sigma = sigma
 
-	def pdf(self, grid):
-		pass
-
-
-def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier=1):
+def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier: float=1):
 	thet = np.random.uniform(low=low, high=high, size=n_samples)
 	x = thet * np.sin(thet)
 	y = thet * np.cos(thet)
-	if np.abs(radius_multiplier - 1) > 1e-3:
+	if np.abs(radius_multiplier - 1) > 1e-3: # no point in doing anything if multiplier is almost one
 		x *= radius_multiplier
 		y *= radius_multiplier
 	return x, y
+
+def build_spiral_distribution(n_samples, sigma):
+	samples = sample_spiral(n_samples, radius_multiplier=0.25)
+	gm = GaussianMixture(centers=samples, scales=sigma)
+	return gm

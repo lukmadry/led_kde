@@ -16,8 +16,9 @@ from tools import (sample_via_importance_resampling, support_width, support_widt
                    estimate_bounding_radius_2d, comparative_fns_sentinel, sliced_wasserstein_2d)
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
-                 _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba, compute_kde_gaussian_1d_numba)
-from logops import print_statistics_for_forget, print_statistics_for_1d_retain, build_progress_bar
+                 _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba,
+                 compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d)
+from logops import print_statistics_for_forget, print_statistics_for_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
                          'max___density': np.max, 'max': np.max, 'support_width': support_width,
@@ -59,7 +60,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 	_radius = grid_size * dx if radius is None else radius
 	kernel_arr = compute_gaussian_kernel_1d(_radius, dx, k_scale)
 	alpha_func_obj = _alpha_func_direct_1d if not fast else _alpha_func_direct_1d_numba
-	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw
+	sampler_fn = sample_led_kde_direct_raw_fast_is if led_is else sample_led_kde_direct_raw # TODO think about abandoning this and always choosing the 1st one
 	matcher_fn = match_x_to_grid_with_cubic_1d if interpolation == 'cubic' else match_x_to_grid_and_val_1d
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = datetime.datetime.now()
@@ -178,15 +179,16 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
     verbose : bool, if True will print values of the statistics during sampling. If False only a progress bar will be displayed
 	"""
 	return run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
-                          k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
-                          alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_1d_retain,
+	                            k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+	                            alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
+	                            fast, led_is, verbose=verbose, update_fn=update_retaining, print_fn=print_statistics_for_retain,
 	                            interpolation=interpolation)
 
-def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
+
+def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                                               alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                                              interpolation, verbose, *args, **kwargs):
+                                              interpolation, verbose, sampler_fn, update_fn, print_fn, *args, **kwargs):
 	"""
 
 	"""
@@ -203,10 +205,11 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	descriptive_metrics = descriptive_fns_sentinel(descriptive_metrics, 2)
 	comparative_metrics = comparative_fns_sentinel(comparative_metrics, 2)
+	starting_density = compute_kde_scott_2d(grid, initial_observations)
 	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 		try:
-			led_samples = sample_led_kde_direct_raw_fast_is(
+			led_samples = sampler_fn(
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
@@ -220,13 +223,15 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 				print("we will proceed with saving the results anyway")
 			break
 
-		local_led_pdf = compute_kde_scott_2d(x=grid, observations=led_samples)
+		obs = update_fn(obs, led_samples)
+		local_led_pdf = compute_kde_scott_2d(x=grid, observations=obs)
 		all_pdfs.append(local_led_pdf)
 
-		stat = print_statistics_for_forget(local_led_pdf, led_samples, descriptive_metrics + comparative_metrics,
+		stat = print_fn(local_led_pdf, obs, descriptive_metrics + comparative_metrics,
 		                                   desc_func_dict=descriptive_functions, i=i,
 		                                   verbosity_freq=verbosity_freq, orig_samples=initial_observations,
-		                                   comp_func_dict=comparative_functions, verbose=verbose)
+		                                   comp_func_dict=comparative_functions, verbose=verbose,
+		                                    orig_density=starting_density, n_samples=n_samples, grid=grid)
 		statistics.append(stat)
 		if not verbose:
 			print(build_progress_bar(i, n_trials, pbar_length), end="\r")
@@ -238,23 +243,46 @@ def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, gr
 		return (led_samples, np.asarray(all_pdfs, dtype=float), statistics, additional_info)
 	return np.asarray(all_pdfs, dtype=float), statistics, additional_info
 
-def run_recurrent_kde_with_data_forgetting_2d():
-	pass
+def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
+                                              k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+                                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                                              interpolation, verbose, *args, **kwargs):
+
+	return run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
+                              k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                              interpolation, verbose, sampler_fn=sample_led_kde_direct_raw_fast_is,
+                                update_fn=update_forgetting, print_fn=print_statistics_for_forget)
+
+def run_recurrent_led_with_data_retaining_2d(n_trials, initial_observations, grid, dx, grid_size,
+                                              k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+                                              alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+                                              interpolation, verbose, *args, **kwargs):
+
+	return run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
+	                            k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
+	                            alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
+	                            interpolation, verbose, sampler_fn=sample_led_kde_direct_raw_fast_is,
+	                            update_fn=update_retaining, print_fn=print_statistics_for_retain)
+
 
 # TODO refactor to be similar to the previous one, let the pdf thing happen inside sampler
 def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_samples,
                       descriptive_metrics, comparative_metrics,
-                      verbosity_freq, return_final_samples, update_fn, print_fn, verbose, fast_kde, *args, **kwargs):
+                      verbosity_freq, return_final_samples, update_fn, print_fn, verbose, fast_kde, dimension=1, *args, **kwargs):
 
-	starting_kde = compute_kde(x=grid, observations=starting_dist,
-		                               norm_scale=k_scale)
-	current_dist = kde_sampled_pdf_func(grid=grid, kde=starting_kde)
+
 	current_obs = []
 
 	all_dists = []
 	statistics = []
 
-	q_dist = stats.norm(loc=0, scale=5)
+	if dimension == 1:
+		q_dist = stats.norm(loc=0, scale=5)
+	elif dimension == 2:
+		q_dist = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * 2)
+	else:
+		raise ValueError("dimension \notin \{ 1, 2 \}")
 
 	def custom_proposal_pdf(x):
 		return q_dist.pdf(x)
@@ -264,7 +292,18 @@ def run_recurrent_kde(n_trials, starting_dist, grid, k_scale, n_candidates, n_sa
 
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	t0 = time.perf_counter()
-	kde_func = compute_kde if not fast_kde else compute_kde_gaussian_1d_numba
+	if dimension == 1:
+		kde_func = compute_kde if not fast_kde else compute_kde_gaussian_1d_numba
+		starting_kde = compute_kde_gaussian_1d_numba(x=grid, observations=starting_dist,
+		                           var=k_scale)
+		current_dist = kde_sampled_pdf_func(grid=grid, kde=starting_kde)  # TODO review
+	elif dimension == 2:
+		kde_func = compute_kde_gaussian_2d_numba
+		starting_kde = compute_kde_gaussian_2d_numba(x=grid, observations=starting_dist,
+		                           norm_scale=k_scale)
+		current_dist = kde_sampled_pdf_func_2d(grid=grid, kde=starting_kde)
+	else:
+		raise ValueError("dimension \notin \{ 1, 2 \}")
 	for i in range(n_trials):
 		# first sample through IS
 		# then use this IS to compute new distribution with KDE
@@ -328,6 +367,36 @@ def run_recurrent_kde_with_retaining(n_trials, starting_dist, grid,
 	"""
 	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
 	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
-	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_1d_retain,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_retain,
 	                         update_fn=update_retaining, verbose=verbose, return_final_samples=return_final_samples,
-	                         verbosity_freq=verbosity_freq, fast_kde=fast_kde, **kwargs)
+	                         verbosity_freq=verbosity_freq, fast_kde=fast_kde, dimension=1, **kwargs)
+
+
+def run_recurrent_kde_with_data_forgetting_2d(n_trials, starting_dist, grid,
+									k_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+									descriptive_metrics=['mean', 'sd', 'max', 'max___density'],
+					                comparative_metrics=['sliced_wassersteind_2d', 'kl_d'], fast_kde=True,
+					                verbosity_freq=10, return_final_samples=False, verbose=False, *args, **kwargs):
+
+	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
+	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_retain,
+	                         update_fn=update_retaining, verbose=verbose, return_final_samples=return_final_samples,
+	                         verbosity_freq=verbosity_freq, fast_kde=fast_kde, dimension=2)
+
+def run_recurrent_kde_with_data_retaining_2d(n_trials, starting_dist, grid,
+				k_scale=0.04, n_candidates=1000, n_samples=1000, scale_is_variance=False,
+				descriptive_metrics=['mean', 'sd', 'max', 'max___density'], comparative_metrics=['kl_d'],
+                 verbosity_freq=10, return_final_samples=False, verbose=False, fast_kde=True, **kwargs):
+	"""
+
+	n_trials : int
+	starting_dist : a function that computes density value
+	grid : a grid of values on which we will evaluate densities
+
+	"""
+	return run_recurrent_kde(n_trials=n_trials, starting_dist=starting_dist, grid=grid,
+	                         k_scale=k_scale, n_candidates=n_candidates, n_samples=n_samples, comparative_metrics=comparative_metrics,
+	                         descriptive_metrics=descriptive_metrics, print_fn=print_statistics_for_retain,
+	                         update_fn=update_retaining, verbose=verbose, return_final_samples=return_final_samples,
+	                         verbosity_freq=verbosity_freq, fast_kde=fast_kde, dimension=2, **kwargs)
