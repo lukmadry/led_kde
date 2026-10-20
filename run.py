@@ -127,8 +127,10 @@ if __name__ == '__main__':
 	parser.add_argument("--gif_simulation_step", default=20,
 						type=int, help="if equal to k, will save to gif every k steps. For smooth but costly gif choose 1")
 
+	# debugging and reporting arguments
 	# prints some intermediary values, but you need to uncomment the branches
 	parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=False)
+	parser.add_argument("--codeword", type=str, help="add a codeword to find an experiment more easily later")
 
 	args = parser.parse_args()
 	args_dict = vars(args)
