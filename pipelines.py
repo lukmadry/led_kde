@@ -188,7 +188,7 @@ def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, gri
 def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                                               alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                                              interpolation, verbose, sampler_fn, update_fn, print_fn, *args, **kwargs):
+                                              interpolation, verbose, seed, sampler_fn, update_fn, print_fn, *args, **kwargs):
 	"""
 
 	"""
@@ -197,8 +197,8 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 	additional_info = {}
 
 	obs = initial_observations
-	k_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * k_scale).rvs
-	t_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * t_scale).rvs
+	k_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * k_scale, seed=seed).rvs
+	t_sampler = stats.multivariate_normal(mean=[0, 0], cov=np.eye(2) * t_scale, seed=seed).rvs
 	radius = dx * grid_size
 	kernel_arr = compute_gaussian_kernel_2d(grid, radius, k_scale)
 	matcher_fn = partial(match_x_to_grid_and_val_2d, method=interpolation)
@@ -206,6 +206,11 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 	descriptive_metrics = descriptive_fns_sentinel(descriptive_metrics, 2)
 	comparative_metrics = comparative_fns_sentinel(comparative_metrics, 2)
 	starting_density = compute_kde_scott_2d(grid, initial_observations)
+	debug = 'debug' in kwargs and kwargs['debug']
+	if debug:
+		print(k_sampler(5))
+		print("\n")
+		print(t_sampler(5))
 	t0 = datetime.datetime.now()
 	for i in range(n_trials):
 		try:
@@ -213,7 +218,7 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=matcher_fn, ndim=2
+				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=matcher_fn, ndim=2, seed=seed, debug=debug
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")
@@ -222,7 +227,9 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 			if i > 100:
 				print("we will proceed with saving the results anyway")
 			break
-
+		if 'debug' in kwargs and kwargs['debug']:
+			print('statistics of sampled observations: ',
+			      led_samples[:, 0].mean(), led_samples[:, 1].mean(), led_samples[:, 0].std(), led_samples[:, 1].std())
 		obs = update_fn(obs, led_samples)
 		local_led_pdf = compute_kde_scott_2d(x=grid, observations=obs)
 		all_pdfs.append(local_led_pdf)
@@ -236,7 +243,6 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 		if not verbose:
 			print(build_progress_bar(i, n_trials, pbar_length), end="\r")
 
-		obs = led_samples
 	t1 = datetime.datetime.now() # my IDE complains that it's duplicated but I'm not sure how to not make it so
 	additional_info.update({"time_in_seconds": (t1 - t0).total_seconds()})
 	if return_final_samples:
@@ -246,24 +252,24 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 def run_recurrent_led_with_data_forgetting_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                                               alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                                              interpolation, verbose, *args, **kwargs):
+                                              interpolation, verbose, seed, *args, **kwargs):
 
 	return run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
                               k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                               alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                              interpolation, verbose, sampler_fn=sample_led_kde_direct_raw_fast_is,
-                                update_fn=update_forgetting, print_fn=print_statistics_for_forget)
+                              interpolation, verbose, seed, sampler_fn=sample_led_kde_direct_raw_fast_is,
+                                update_fn=update_forgetting, print_fn=print_statistics_for_forget, **kwargs)
 
 def run_recurrent_led_with_data_retaining_2d(n_trials, initial_observations, grid, dx, grid_size,
                                               k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                                               alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
-                                              interpolation, verbose, *args, **kwargs):
+                                              interpolation, verbose, seed, *args, **kwargs):
 
 	return run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 	                            k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
 	                            alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq,
 	                            interpolation, verbose, sampler_fn=sample_led_kde_direct_raw_fast_is,
-	                            update_fn=update_retaining, print_fn=print_statistics_for_retain)
+	                            update_fn=update_retaining, print_fn=print_statistics_for_retain, seed=seed)
 
 
 # TODO refactor to be similar to the previous one, let the pdf thing happen inside sampler

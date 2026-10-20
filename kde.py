@@ -524,10 +524,12 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,
                               alpha_func_obj=_alpha_func_direct_1d,
-                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1):
+                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1, seed=None, debug=False):
 	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
                                t_scale=t_scale, k_kernel_arr=k_kernel_arr,
                                log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
+	# if debug:
+	# 	print("alpha control stats: ", alpha_grid.mean(), alpha_grid.std())
 	if np.max(alpha_grid) > 1.01:
 		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
 									np.max(alpha_grid))
@@ -535,8 +537,16 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 	n_candidates = cands_multiplier * n_samples
 	u = t_sampler(size=n_candidates)
 	w = k_sampler(size=n_candidates)
-	idx = np.random.randint(low=0,high=N,size=n_candidates)
+	if seed is None:
+		seed = np.random
+		idx = seed.random_integers(low=0, high=N, size=n_candidates) # TODO complain about it on a numpy forum or whatnot
+	else:
+		idx = seed.integers(low=0,high=N, size=n_candidates)
+	# if debug:
+	# 	print("first indices sampled: ", idx[:5])
 	X = observations[idx] - u - w
+	# if debug:
+	# 	print("first values sampled: ", X[:5])
 	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=True)
 	if np.any(alph_weights > -1e-6): #sufficiently small that we can consider it an approximation error
 		alph_weights = np.maximum(alph_weights, 0)
@@ -545,7 +555,9 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 		                               f"Stopping the run, you may consider rerunning the same "
 		                               f"trial with linear interpolation")
 	alph_weights /= np.sum(alph_weights)
-	resampled_indices = np.random.choice(
+	resampled_indices = seed.choice(
 		n_candidates, size=n_samples, replace=True, p=alph_weights
 	)
+	if debug:
+		print("first resampled indices: ", resampled_indices[:5])
 	return X[resampled_indices]
