@@ -17,7 +17,7 @@ from tools import (sample_via_importance_resampling, support_width, support_widt
 from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba,
-                 compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d)
+                 compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d, _alpha_func_direct_2d_numba)
 from logops import print_statistics_for_forget, print_statistics_for_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
@@ -218,7 +218,7 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=_alpha_func_direct_2d, matcher_fn=matcher_fn, ndim=2, seed=seed, debug=debug
+				alpha_func_obj=_alpha_func_direct_2d_numba, matcher_fn=matcher_fn, ndim=2, seed=seed, debug=debug
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")

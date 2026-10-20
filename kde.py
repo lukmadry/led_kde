@@ -366,7 +366,7 @@ def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps
 	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
 
 def _alpha_func_direct_2d_numba(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = _kde_2d_kernel(x=grid, observations=observations, variance=t_scale)
+	q_L_approx = compute_kde_gaussian_2d_numba(x=grid, observations=observations, variance=t_scale)
 	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
 	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
 	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx

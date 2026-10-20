@@ -127,6 +127,9 @@ if __name__ == '__main__':
 	parser.add_argument("--gif_simulation_step", default=20,
 						type=int, help="if equal to k, will save to gif every k steps. For smooth but costly gif choose 1")
 
+	# prints some intermediary values, but you need to uncomment the branches
+	parser.add_argument("--debug", action=argparse.BooleanOptionalAction, default=False)
+
 	args = parser.parse_args()
 	args_dict = vars(args)
 	res_filepath = os.path.join("results", "record.jsonl")
@@ -145,6 +148,8 @@ if __name__ == '__main__':
 		exit()
 
 	dim = run_dimension_consistency_check(args)
+
+	rng_generator = np.random.default_rng(args.seed)
 
 	validate_distribution_args(args, dim)
 	if dim == 1:
@@ -168,7 +173,9 @@ if __name__ == '__main__':
 		return_final_samples=True,
 		n_samples=args.n_samples,
 		fast=args.fast_kde,
-		interpolation=args.interpolation)
+		interpolation=args.interpolation,
+		debug=args.debug,
+		seed=rng_generator)
 
 	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with numba: {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel: {args.with_fft_cutoff}\n"
@@ -181,7 +188,8 @@ if __name__ == '__main__':
 			centers=args.centers,
 			scales=args.scales,
 			weights=args.weights,
-			scale_is_variance=args.scale_is_variance)
+			scale_is_variance=args.scale_is_variance,
+			random_state=rng_generator)
 	elif args.dist_type == 'gaussian' and dim == 2:
 		raise NotImplementedError
 	elif args.dist_type == 'uniform' and dim == 1:
@@ -189,6 +197,7 @@ if __name__ == '__main__':
 			centers=args.centers,
 			widths=args.widths,
 			weights=args.weights,
+			random_state=rng_generator
 		)
 	elif args.dist_type == 'uniform' and dim == 2:
 		centers = list(zip(args.centers_x, args.centers_y))
@@ -196,7 +205,8 @@ if __name__ == '__main__':
 		true_mixture = distributions.UniformBoxMixture(
 			centers=centers,
 			shapes=widths,
-			weights=args.weights
+			weights=args.weights,
+			random_state=rng_generator
 		)
 	elif dim == 2 and args.spiral:
 		true_mixture = distributions.build_spiral_distribution(args.spiral_samples, args.spiral_kde)
@@ -238,6 +248,9 @@ if __name__ == '__main__':
 		if dim == 1:
 			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_1d(**run_kwargs)
 		else:
+			if args.debug:
+				print(init_obs[:, 0].mean(), init_obs[:, 1].mean(), init_obs[:, 0].std(), init_obs[:, 1].std())
+				print(true_mixture)
 			final_samples, all_dist, stat, new_info = run_recurrent_led_with_data_forgetting_2d(**run_kwargs)
 	elif args.method == 'led_retain':
 		init_obs = true_mixture.rvs(args.n_init_samples)

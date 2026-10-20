@@ -154,7 +154,8 @@ def match_x_to_grid_with_cubic_1d(x, grid, values_grid, *args, **kwargs):
 
 # I think that no interpolation variant will have to be deprecated
 def match_x_to_grid_and_val_2d(x, grid, values_grid,
-							   raise_error_if_outside=False, method='cubic', interpolation=True):
+							   raise_error_if_outside=False, method='cubic',
+							   interpolation=True, fill_value=0): # TODO check if this is not going to lead to more problems
 	"""
 	grid :
 	"""
@@ -162,7 +163,7 @@ def match_x_to_grid_and_val_2d(x, grid, values_grid,
 	_, xlinspace, ylinspace = _interpret_two_dim_grid(grid)
 	if interpolation:
 		return interpn(points=(xlinspace, ylinspace), values=values_grid,
-		               xi=x, method=method, bounds_error=False) # TODO presumably this wastes time on binary search as well
+		               xi=x, method=method, bounds_error=False, fill_value=fill_value) # TODO presumably this wastes time on binary search as well
 	else:
 		raise NotImplementedError
 #

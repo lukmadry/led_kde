@@ -14,7 +14,10 @@ class Distribution:
 
 		self.centers = np.array(centers)
 		self.N = len(self.centers)
-		self.seed = random_state
+		if random_state is not None:
+			self.seed = random_state
+		else:
+			self.seed = np.random.default_rng()
 
 		self.distributions = []
 		if weights is not None:
@@ -46,8 +49,9 @@ class Distribution:
 	def rvs(self, no_samples):
 
 		weights = self.weights/np.sum(self.weights)
-		idx = np.random.choice(a=self.N, size=no_samples, p=weights)
+		idx = self.seed.choice(a=self.N, size=no_samples, p=weights)
 		samples = []
+		state_dict = self.seed.bit_generator.state
 		if not self.multivar:
 			for i in idx:
 				samples.append(self.distributions[i].rvs(random_state=self.seed))
@@ -101,7 +105,7 @@ class GaussianMixture(Distribution):
 		self.weights = np.array(self.weights)
 
 class UniformMixture(Distribution):
-	def __init__(self, centers, widths, weights=None):
+	def __init__(self, centers, widths, weights=None, random_state=None):
 		super().__init__(centers, weights)
 		if isinstance(widths, Number):
 			widths = [widths]
@@ -120,12 +124,14 @@ class UniformMixture(Distribution):
 			self.distributions.append(dist)
 
 class UniformBox:
-	def __init__(self, corner, shapes):
+	def __init__(self, corner, shapes, random_state=None):
 		self.corner = np.array(corner)
 		self.shapes = np.array(shapes)
 
 		self.dist_x = uniform(corner[0] - shapes[0]/2, scale=shapes[0])
 		self.dist_y = uniform(corner[1] - shapes[1]/2, scale=shapes[1])
+
+		self.random_state = random_state
 
 	def pdf(self, grid):
 		"""
@@ -145,8 +151,15 @@ class UniformBox:
 		"""
 		if no_samples is None:
 			no_samples = 1
-		samples_x = self.dist_x.rvs(no_samples, random_state=random_state)
-		samples_y = self.dist_y.rvs(no_samples, random_state=random_state)
+		rs = None
+		if random_state is None and self.random_state is not None:
+			rs = self.random_state
+		elif self.random_state is None and random_state is not None:
+			rs = random_state
+		elif self.random_state is not None and random_state is not None:
+			rs = random_state
+		samples_x = self.dist_x.rvs(no_samples, random_state=rs)
+		samples_y = self.dist_y.rvs(no_samples, random_state=rs)
 		return np.stack([samples_x, samples_y], axis=1)
 
 class UniformBoxMixture(Distribution):
@@ -158,9 +171,14 @@ class UniformBoxMixture(Distribution):
 		if self.shapes.shape[0] != self.N:
 			self.shapes = [self.shapes[0]] * self.N
 		for (cx, cy), (wx, wy) in zip(self.centers, self.shapes):
-			self.distributions.append(UniformBox(corner=(cx-wx/2, cy-wy/2), shapes=(wx, wy)))
+			self.distributions.append(UniformBox(corner=(cx-wx/2, cy-wy/2),
+			                                     shapes=(wx, wy),
+			                                     random_state=random_state))
 
 		self.multivar = True
+
+	def __repr__(self) -> str:
+		return f"Uniform boxes distribution.\nCenters: {self.centers}, shapes: {self.shapes}, weights: {self.weights}"
 
 
 def sample_spiral(n_samples, low=np.pi, high=4*np.pi, radius_multiplier: float=1):
