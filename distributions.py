@@ -1,12 +1,12 @@
 import numpy as np
-from scipy.stats import norm, multivariate_normal, uniform, rv_continuous
+from scipy.stats import norm, multivariate_normal, uniform, pareto
 from numbers import Number
 
 from kde import kde_sampled_pdf_func_2d, kde_sampled_pdf_func, compute_kde_gaussian_2d_numba
-
+# TODO I realised when this was already well underway that scipy stats has an interface for mixtures, which would be
+# probably cleaner to use. the advantage of my version is that it handles automatically flipping pareto, which is not so clear
 
 # base class that will allow us to easily add distributions together if needed
-# TODO overload + operator to add distributions
 class Distribution:
 	def __init__(self, centers, weights=None, random_state=None):
 		if isinstance(centers, Number):
@@ -28,6 +28,12 @@ class Distribution:
 			self.weights = [1]*self.N
 
 		self.multivar = False # by default, we're dealing with one-dim objects
+		self._flips = [False]*self.N # in case we need to artifially flip the distribution. It will be flipped around center
+		if any(self._flips) and self.multivar:
+			raise NotImplementedError("flipping the distribution is not implemented for multivariate")
+
+	def get_flips(self):
+		return self._flips
 
 	def pdf(self, grid):
 		"""
@@ -38,7 +44,12 @@ class Distribution:
 		if not self.multivar:
 			final_density = np.zeros_like(grid)
 			for i in range(self.N):
-				final_density += weights[i]*self.distributions[i].pdf(grid)
+				if self._flips[i]:
+					new_grid = 2*self.centers[i] - grid
+					temp = weights[i]*self.distributions[i].pdf(new_grid)
+				else:
+					temp = weights[i]*self.distributions[i].pdf(grid)
+				final_density += temp
 			return final_density
 		else:
 			final_density = np.zeros(grid.shape[:-1]) # maybe we can parametrize it or leave more choice, idk now
@@ -60,20 +71,29 @@ class Distribution:
 				samples.append(self.distributions[i].rvs(random_state=self.seed).flatten())
 		return np.array(samples)
 
+	def __len__(self):
+		return self.N
+
+	def __getitem__(self, item):
+		return self.distributions[item]
+
 	def extend(self, distribution):
+		if not isinstance(distribution, Distribution):
+			raise ValueError("Distributions can only be extended with Distributions")
 		self.distributions.extend(distribution.distributions)
 		self.weights.extend(distribution.weights)
 		self.centers = np.concatenate([self.centers, distribution.centers], axis=0)
+		self.N += len(distribution)
+		self._flips += distribution.get_flips()
 
+# TODO not sure if this is strictly necessary, if anything you do similar thing with width, so maybe this can be made uniform
+class ScaleArgMixin:
 
-class GaussianMixture(Distribution):
-	def __init__(self, centers, scales, weights=None, scale_is_variance=False, random_state=None):
-		super().__init__(centers, weights, random_state=random_state)
+	def set_scale(self, scales, allow_neg=True):
 		if isinstance(scales, Number):
 			scales = [scales]
 
 		self.scales = np.array(scales)
-		self.scale_is_variance = scale_is_variance
 
 		if not ((len(self.scales) == self.N) or len(self.scales) == 1):
 			raise ValueError("scales argument should be either equal to length of centers or take only one element")
@@ -81,9 +101,21 @@ class GaussianMixture(Distribution):
 		if len(self.scales) == 1:
 			self.scales = [self.scales[0]] * self.N # not really optimal, TODO change
 
-		for s in self.scales:
-			if s < 0:
-				raise ValueError("scales parameter cannot be negative or contain negative values if a list/array")
+		if not allow_neg:
+			for s in self.scales:
+				if s < 0:
+					raise ValueError("scales parameter cannot be negative or contain negative values if a list/array")
+		else:
+			for i in range(self.N):
+				if self.scales[i] < 0:
+					self.scales[i] = abs(self.scales[i])
+					self._flips[i] = True
+
+class GaussianMixture(Distribution, ScaleArgMixin):
+	def __init__(self, centers, scales, weights=None, scale_is_variance=False, random_state=None):
+		super().__init__(centers, weights, random_state=random_state)
+		self.set_scale(scales)
+		self.scale_is_variance = scale_is_variance
 
 		self.multivar = False
 		if not isinstance(self.centers[0], Number):
@@ -122,6 +154,24 @@ class UniformMixture(Distribution):
 		for c, w in zip(self.centers, self.widths):
 			dist = uniform(loc=c-w/2, scale=w)
 			self.distributions.append(dist)
+
+class ParetoMixture(Distribution, ScaleArgMixin):
+	def __init__(self, b, centers, scales, weights=None, random_state=None):
+		super().__init__(centers=centers, weights=weights, random_state=random_state)
+		self.set_scale(scales, allow_neg=True)
+
+		if isinstance(b, Number):
+			self.bs = [b]
+		else:
+			self.bs = b
+
+		if len(self.bs) == 1:
+			self.bs = [self.bs[0]] * self.N
+
+		for b, c, s in zip(self.bs, self.centers, self.scales):
+			# if we want to start from zero, then we subtract one, because standard pareto starts from one
+			# then 0 is as minus one, and zero is as one (so the beginning)
+			self.distributions.append(pareto(b=b, loc=c-1, scale=s))
 
 class UniformBox:
 	def __init__(self, corner, shapes, random_state=None):
@@ -174,7 +224,6 @@ class UniformBoxMixture(Distribution):
 			self.distributions.append(UniformBox(corner=(cx-wx/2, cy-wy/2),
 			                                     shapes=(wx, wy),
 			                                     random_state=random_state))
-
 		self.multivar = True
 
 	def __repr__(self) -> str:
