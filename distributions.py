@@ -7,12 +7,26 @@ from kde import kde_sampled_pdf_func_2d, kde_sampled_pdf_func, compute_kde_gauss
 # probably cleaner to use. the advantage of my version is that it handles automatically flipping pareto, which is not so clear
 
 # base class that will allow us to easily add distributions together if needed
-class Distribution:
-	def __init__(self, centers, weights=None, random_state=None):
-		if isinstance(centers, Number):
-			centers = [centers]
+# TODO make it accept instances of rv_continous of scipy.stats
+# TODO implement constructor with no data which we can .extend later on
+def extend_or_concat(arr_a, arr_b):
+	if isinstance(arr_a, list):
+		arr_a.extend(arr_b)
+		return arr_a
+	elif isinstance(arr_a, np.ndarray):
+		return np.concatenate([arr_a, arr_b], axis=0)
+	else:
+		TypeError
 
-		self.centers = np.array(centers)
+class Mixture:
+	def __init__(self, centers=None, weights=None, random_state=None):
+		if centers is not None:
+			if isinstance(centers, Number):
+				centers = [centers]
+
+			self.centers = np.array(centers)
+		else:
+			self.centers = []
 		self.N = len(self.centers)
 		if random_state is not None:
 			self.seed = random_state
@@ -78,10 +92,11 @@ class Distribution:
 		return self.distributions[item]
 
 	def extend(self, distribution):
-		if not isinstance(distribution, Distribution):
+		if not isinstance(distribution, Mixture):
 			raise ValueError("Distributions can only be extended with Distributions")
 		self.distributions.extend(distribution.distributions)
-		self.weights.extend(distribution.weights)
+		self.weights = extend_or_concat(self.weights, distribution.weights)
+		#self.weights.extend(distribution.weights)
 		self.centers = np.concatenate([self.centers, distribution.centers], axis=0)
 		self.N += len(distribution)
 		self._flips += distribution.get_flips()
@@ -111,7 +126,7 @@ class ScaleArgMixin:
 					self.scales[i] = abs(self.scales[i])
 					self._flips[i] = True
 
-class GaussianMixture(Distribution, ScaleArgMixin):
+class GaussianMixture(Mixture, ScaleArgMixin):
 	def __init__(self, centers, scales, weights=None, scale_is_variance=False, random_state=None):
 		super().__init__(centers, weights, random_state=random_state)
 		self.set_scale(scales)
@@ -136,7 +151,7 @@ class GaussianMixture(Distribution, ScaleArgMixin):
 			self.weights = [1]*self.N
 		self.weights = np.array(self.weights)
 
-class UniformMixture(Distribution):
+class UniformMixture(Mixture):
 	def __init__(self, centers, widths, weights=None, random_state=None):
 		super().__init__(centers, weights)
 		if isinstance(widths, Number):
@@ -155,7 +170,7 @@ class UniformMixture(Distribution):
 			dist = uniform(loc=c-w/2, scale=w)
 			self.distributions.append(dist)
 
-class ParetoMixture(Distribution, ScaleArgMixin):
+class ParetoMixture(Mixture, ScaleArgMixin):
 	def __init__(self, b, centers, scales, weights=None, random_state=None):
 		super().__init__(centers=centers, weights=weights, random_state=random_state)
 		self.set_scale(scales, allow_neg=True)
@@ -171,7 +186,7 @@ class ParetoMixture(Distribution, ScaleArgMixin):
 		for b, c, s in zip(self.bs, self.centers, self.scales):
 			# if we want to start from zero, then we subtract one, because standard pareto starts from one
 			# then 0 is as minus one, and zero is as one (so the beginning)
-			self.distributions.append(pareto(b=b, loc=c-1, scale=s))
+			self.distributions.append(pareto(b=b, loc=c-s, scale=s))
 
 class UniformBox:
 	def __init__(self, corner, shapes, random_state=None):
@@ -212,7 +227,7 @@ class UniformBox:
 		samples_y = self.dist_y.rvs(no_samples, random_state=rs)
 		return np.stack([samples_x, samples_y], axis=1)
 
-class UniformBoxMixture(Distribution):
+class UniformBoxMixture(Mixture):
 	def __init__(self, centers, shapes, weights=None, random_state=None):
 		super().__init__(centers, weights, random_state=random_state)
 		self.shapes = np.array(shapes)
@@ -243,3 +258,68 @@ def build_spiral_distribution(n_samples, sigma):
 	samples = sample_spiral(n_samples, radius_multiplier=0.25)
 	gm = GaussianMixture(centers=samples, scales=sigma)
 	return gm
+
+def build_distribution_from_text(text):
+	if isinstance(text, str):
+		lines = text.split("\n")
+	elif isinstance(text, list):
+		lines = text
+		for l in lines:
+			if not isinstance(l, str):
+				raise TypeError("text should be a string or a list of strings")
+	else:
+		raise TypeError("text should be a string or a list of strings")
+
+	gaussians_c = []
+	gaussians_s = []
+	gaussians_weights = []
+	uniforms_c = []
+	uniforms_w = []
+	uniforms_weights = []
+	paretos_b = []
+	paretos_c = []
+	paretos_s = []
+	paretos_weights = []
+	for line in lines:
+		line = line.strip()
+		if len(line) == 0:
+			continue
+		line_split = line.split()
+		dist_type = line_split[0]
+		if dist_type == 'gauss':
+			mean, scale = float(line_split[1]), float(line_split[2])
+			gaussians_c.append(mean)
+			gaussians_s.append(scale)
+			if len(line_split) > 3:
+				gaussians_weights.append(float(line_split[3]))
+			else:
+				gaussians_weights.append(1)
+		elif dist_type == 'uniform':
+			center, width = float(line_split[1]), float(line_split[2])
+			uniforms_c.append(center)
+			uniforms_w.append(width)
+			if len(line_split) > 3:
+				uniforms_weights.append(float(line_split[3]))
+			else:
+				uniforms_weights.append(1)
+		elif dist_type == 'pareto':
+			b, loc, scale = float(line_split[1]), float(line_split[2]), float(line_split[3])
+			paretos_b.append(b)
+			paretos_c.append(loc)
+			paretos_s.append(scale)
+			if len(line_split) > 4:
+				paretos_weights.append(float(line_split[4]))
+			else:
+				paretos_weights.append(1)
+
+	mixture = Mixture()
+	if len(gaussians_c):
+		gauss = GaussianMixture(centers=gaussians_c, scales=gaussians_s, weights=gaussians_weights)
+		mixture.extend(gauss)
+	if len(uniforms_c):
+		uniform = UniformMixture(centers=uniforms_c, widths=uniforms_w, weights=uniforms_weights)
+		mixture.extend(uniform)
+	if len(paretos_b):
+		paretor = ParetoMixture(centers=paretos_c, scales=paretos_s, b=paretos_b, weights=paretos_weights)
+		mixture.extend(paretor)
+	return mixture

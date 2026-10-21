@@ -67,7 +67,8 @@ if __name__ == '__main__':
 
 	# distribution arguments
 	parser.add_argument("--dist_type",
-						choices=['gaussian', 'uniform'], help="basic building distribution of an initial mixture")
+						choices=['gaussian', 'uniform', 'custom'], help="basic building distribution of an initial mixture")
+	parser.add_argument("--configuration_file", type=str)
 
 	# one dimensional arguments
 	parser.add_argument("--centers", nargs='+',
@@ -212,6 +213,11 @@ if __name__ == '__main__':
 		)
 	elif dim == 2 and args.spiral:
 		true_mixture = distributions.build_spiral_distribution(args.spiral_samples, args.spiral_kde)
+	elif args.dist_type == 'custom':
+		with open(args.configuration_file, "r") as f:
+			text = f.read()
+		args_dict['custom_dist_text'] = text
+		true_mixture = distributions.build_distribution_from_text(text)
 	else:
 		raise NotImplementedError
 

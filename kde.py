@@ -539,7 +539,7 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 	w = k_sampler(size=n_candidates)
 	if seed is None:
 		seed = np.random
-		idx = seed.random_integers(low=0, high=N, size=n_candidates) # TODO complain about it on a numpy forum or whatnot
+		idx = seed.randint(low=0, high=N, size=n_candidates) # TODO complain about it on a numpy forum or whatnot
 	else:
 		idx = seed.integers(low=0,high=N, size=n_candidates)
 	# if debug:
@@ -553,7 +553,7 @@ def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
 	else:
 		raise NegativeProbabilityError(f"Observed negative probability of {np.min(alph_weights)}. "
 		                               f"Stopping the run, you may consider rerunning the same "
-		                               f"trial with linear interpolation")
+		                               f"trial with linear interpolation", np.min(alph_weights))
 	alph_weights /= np.sum(alph_weights)
 	resampled_indices = seed.choice(
 		n_candidates, size=n_samples, replace=True, p=alph_weights

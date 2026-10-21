@@ -25,6 +25,10 @@ def none_sentinel(arg1, arg2):
 
 # checks if all the parameters are consistent with desired dimension
 def run_dimension_consistency_check(args):
+	if args.dist_type == "custom":
+		print("For custom distributions, 2D is not supported yet")
+		return 1
+
 	dim_one_not_none = 0
 	dim_two_not_none = 0
 
