@@ -1,11 +1,12 @@
 import unittest
 import numpy as np
 import time
+from scipy.stats import norm
 
-from kde import (alpha_func, compute_led_kde, compute_kde, sample_led_kde,
+from kde import (alpha_func, compute_led_kde, compute_kde, sample_led_kde, sample_led_kde_direct_raw_fast_is,
                  compute_kde_gaussian_numba_wrapper, compute_kde_binned_fft, compute_kde_1d_sklearn,
-                 _kde_2d_kernel, compute_kde_2d)
-from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d
+                 _kde_2d_kernel, compute_kde_2d, _alpha_func_direct_1d_numba)
+from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d, compute_gaussian_kernel_1d
 from functools import partial
 from distributions import GaussianMixture, UniformMixture, UniformBoxMixture
 
@@ -236,7 +237,10 @@ def profile_alpha_func(runs=10, grid_sizes = [100, 500, 1000], sample_sizes = [1
 		for s in sample_sizes:
 			obs = unif_mixture.rvs(s)
 			x_grid = np.linspace(-5, 5, g)
-			avg, _, _ = profile_function(alpha_func, runs=runs, grid=x_grid, observations=obs, t_scale=0.01, k_scale=0.02)
+			dx = x_grid[1] - x_grid[0]
+			k_kernel_arr = compute_gaussian_kernel_1d(10, dx=dx, var=0.02)
+			avg, _, _ = profile_function(_alpha_func_direct_1d_numba, runs=runs, k_kernel_arr=k_kernel_arr, grid=x_grid,
+			                             observations=obs, t_scale=0.01, dx=dx)
 			average_times_alpha.append((g, s, avg))
 	return average_times_alpha
 
@@ -248,9 +252,30 @@ def profile_sampling_led(runs=10, init_s_size=1000, grid_sizes=[100, 500, 1000],
 		xgrid = np.linspace(-5, 5, g)
 		alpha = alpha_func(grid=xgrid, observations=obs, t_scale=0.01, k_scale=0.02, filter_denom=False)
 		for s in sample_sizes:
-			res, _, _ = profile_function(sample_led_kde,
+			res, _, _ = profile_function(sample_led_kde, runs=runs,
 							 n_samples=s, observations=obs,
 							 t_scale=0.01, k_scale=0.02, alpha_grid=alpha, grid=xgrid)
+			avg_times.append((g, s, res))
+
+	return avg_times
+
+
+def profile_sampling_led_fast(runs=10, init_s_size=1000, grid_sizes=[100, 500, 1000],
+						 sample_sizes=[10, 25, 100, 1000, 5000]):
+	obs = unif_mixture.rvs(init_s_size)
+	avg_times = []
+	k_sampler = norm(loc=0, scale=0.02).rvs
+	t_sampler = norm(loc=0, scale=0.01).rvs
+	for g in grid_sizes:
+		xgrid = np.linspace(-5, 5, g)
+		dx = xgrid[1] - xgrid[0]
+		k_kernel_arr = compute_gaussian_kernel_1d(10, dx=dx, var=0.02)
+		alpha_grid = _alpha_func_direct_1d_numba(grid=xgrid, observations=obs, t_scale=0.01, k_kernel_arr=k_kernel_arr,
+		                                    dx=dx)
+		for s in sample_sizes:
+			res, _, _ = profile_function(sample_led_kde_direct_raw_fast_is, runs=runs, t_sampler=t_sampler, dx=dx,
+							 n_samples=s, observations=obs, k_sampler=k_sampler, alpha_grid=alpha_grid,
+							 t_scale=0.01, k_kernel_arr=k_kernel_arr, grid=xgrid)
 			avg_times.append((g, s, res))
 
 	return avg_times
@@ -259,6 +284,8 @@ if __name__ == '__main__':
 	import sys
 	if len(sys.argv) > 1 and sys.argv[1] == '--profile':
 		K = 10
+		print("Profiling fast LED sampling")
+		led_sampling_fast = profile_sampling_led_fast(K)
 		print("Profiling KDE")
 		kde_avg_times = profile_kde(K)
 		print("Profiling KDE with numba")
@@ -277,9 +304,9 @@ if __name__ == '__main__':
 		led_sampling = profile_sampling_led(K)
 
 		for fname, arr in zip(['kde', 'kde_cutoff', 'kde_numba',  'alpha',
-		                       'led', 'kde_sklearn', 'kde_2d_numba'],
+		                       'led', 'kde_sklearn', 'kde_2d_numba', 'led_fast_is'],
 							  [kde_avg_times, kde_cutoff_avg_times, kde_numba_avg_times, alpha_avg_times,
-							   led_sampling, kde_sklearn, kde_numba_2d]):
+							   led_sampling, kde_sklearn, kde_numba_2d, led_sampling_fast]):
 			print(fname)
 			for g, s, avg in arr:
 				print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")

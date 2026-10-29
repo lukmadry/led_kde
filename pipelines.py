@@ -40,7 +40,7 @@ def update_retaining(old_obs, new_obs):
 def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, update_fn, print_fn, verbose, interpolation):
+                          fast, led_is, update_fn, print_fn, verbose, interpolation, **kwargs):
 	"""
 
 	internal function for pipelines.
@@ -87,7 +87,8 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 				additional_info.update({"negative_proba": err.min_prob_value})
 			if i > 100:
 				print("we will proceed with saving the results anyway")
-			break
+			else:
+				exit()
 
 		obs = update_fn(obs, led_samples)
 		local_led_pdf = compute_kde_scott(x=grid, observations=obs)
@@ -113,7 +114,7 @@ def run_recurrent_led_1d(n_trials, initial_observations, grid, dx, grid_size,
 def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose, interpolation):
+                          fast, led_is, verbose, interpolation, **kwargs):
 	"""
 	runs n_trials of data forgetting scheme with LED-KDE.
 
@@ -150,7 +151,7 @@ def run_recurrent_led_with_data_forgetting_1d(n_trials, initial_observations, gr
 def run_recurrent_led_with_data_retaining_1d(n_trials, initial_observations, grid, dx, grid_size,
                           k_scale, t_scale, n_samples, descriptive_metrics, comparative_metrics, radius,
                           alpha_log_eps, alpha_denom_eps, return_final_samples, verbosity_freq, cands_multiplier,
-                          fast, led_is, verbose, interpolation):
+                          fast, led_is, verbose, interpolation, **kwargs):
 	"""
 	runs scheme with LED-KDE with data retaining.
 

@@ -8,7 +8,6 @@ from kde import kde_sampled_pdf_func_2d, kde_sampled_pdf_func, compute_kde_gauss
 
 # base class that will allow us to easily add distributions together if needed
 # TODO make it accept instances of rv_continous of scipy.stats
-# TODO implement constructor with no data which we can .extend later on
 def extend_or_concat(arr_a, arr_b):
 	if isinstance(arr_a, list):
 		arr_a.extend(arr_b)

@@ -523,11 +523,12 @@ def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
 def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
                               t_sampler, k_kernel_arr, k_sampler, dx,
                               alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,
-                              alpha_func_obj=_alpha_func_direct_1d,
+                              alpha_func_obj=_alpha_func_direct_1d, alpha_grid=None,
                               matcher_fn=match_x_to_grid_and_val_1d, ndim=1, seed=None, debug=False):
-	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
-                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
-                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
+	if alpha_grid is None:
+		alpha_grid = alpha_func_obj(grid=grid, observations=observations,
+	                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
+	                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
 	# if debug:
 	# 	print("alpha control stats: ", alpha_grid.mean(), alpha_grid.std())
 	if np.max(alpha_grid) > 1.01:
