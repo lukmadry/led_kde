@@ -12,7 +12,7 @@ from sklearn.neighbors import KernelDensity
 from tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
                    StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
                    match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, convolve_cont_grid_1d_with_kernel,
-                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError, none_sentinel)
+                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError, none_sentinel, _interpret_two_dim_grid)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
@@ -100,32 +100,32 @@ def compute_kde_gaussian_numba_wrapper(x, observations, var):
 
 def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	"""
-	uses binning-fft method to compute kde, mostly for learning purposes
+	uses binning-fft method to compute kde.
 
 	x: np.ndarray (M, )
 	observations: np.ndarray (N, )
 	norm_scale: float
 	dx: float, step of a grid
 	"""
-	x_grid = np.asarray(x, dtype=np.float64)
-	obs = np.asarray(observations, dtype=np.float64)
+	dx = x[1] - x[0]
+	M = len(x)
 
-	M = len(x_grid)
+	edges = np.empty(M + 1, dtype=np.float64)
+	edges[0] = x[0] - 0.5 * dx
+	edges[1:-1] = 0.5 * (x[:-1] + x[1:])
+	edges[-1] = x[-1] + 0.5 * dx
 
-	half_step = dx / 2.0
-	bins = np.concatenate(
-		[
-			x_grid - half_step,
-			[x_grid[-1] + half_step],
-		]
+	counts, _ = np.histogram(observations, bins=edges)
+	weights = counts.astype(np.float64) / (len(observations) * dx)
+
+	bandwidth = np.sqrt(norm_scale)
+	k_radius = int(np.ceil(4.0 * bandwidth / dx))
+	k_x = np.arange(-k_radius, k_radius + 1, dtype=np.float64) * dx
+	kernel_vals = (
+			np.exp(-0.5 * (k_x / bandwidth) ** 2)
+			/ (bandwidth * np.sqrt(2.0 * np.pi))
+			* dx
 	)
-
-	weights, _ = np.histogram(obs, bins=bins)
-	weights = weights.astype(np.float64) / len(obs)
-
-	kernel_x = np.arange(-(M-1) * dx, M*dx, step=dx) * dx
-	kernel_vals = exact_gaussian_1d(kernel_x, norm_scale)
-
 	density = fftconvolve(weights, kernel_vals, mode="same")
 	return density
 
@@ -281,6 +281,55 @@ def kde_sampled_pdf_func_2d(grid, kde):
 
 	return fn
 
+def fast_fft_kde_2d_standalone(
+	observations: np.ndarray,
+	grid: np.ndarray,
+	bandwidth: float,
+) -> np.ndarray:
+	"""Computes 2D Gaussian KDE rapidly via histogram binning and FFT convolution
+	"""
+	grid, x_grid, y_grid = _interpret_two_dim_grid(grid)
+
+	nx, ny = len(x_grid), len(y_grid)
+	dx = x_grid[1] - x_grid[0]
+	dy = y_grid[1] - y_grid[0]
+
+	x_edges = np.empty(nx + 1, dtype=np.float64)
+	x_edges[0] = x_grid[0] - 0.5 * dx
+	x_edges[1:-1] = 0.5 * (x_grid[:-1] + x_grid[1:])
+	x_edges[-1] = x_grid[-1] + 0.5 * dx
+
+	y_edges = np.empty(ny + 1, dtype=np.float64)
+	y_edges[0] = y_grid[0] - 0.5 * dy
+	y_edges[1:-1] = 0.5 * (y_grid[:-1] + y_grid[1:])
+	y_edges[-1] = y_grid[-1] + 0.5 * dy
+
+	counts, _, _ = np.histogram2d(
+		observations[:, 0], observations[:, 1], bins=[x_edges, y_edges]
+	)
+	weights = counts.T.astype(np.float64) / (len(observations) * dx * dy)
+
+	k_radius_x = int(np.ceil(4.0 * bandwidth / dx))
+	k_radius_y = int(np.ceil(4.0 * bandwidth / dy))
+
+	kx = np.arange(-k_radius_x, k_radius_x + 1, dtype=np.float64) * dx
+	ky = np.arange(-k_radius_y, k_radius_y + 1, dtype=np.float64) * dy
+	KX, KY = np.meshgrid(kx, ky, indexing="ij")
+
+	kernel_vals = (
+		np.exp(-0.5 * (KX**2 + KY**2) / (bandwidth**2))
+		/ (2.0 * np.pi * bandwidth**2)
+		* (dx * dy)
+	)
+
+	density = fftconvolve(weights, kernel_vals, mode="same")
+	return density
+
+def compute_kde_2d_fftbin(x, observations, variance, keep_shape=True):
+	if x.shape != 3:
+		raise ValueError("x must be a grid")
+	return fast_fft_kde_2d_standalone(grid=x, observations=observations, bandwidth=np.sqrt(variance))
+
 def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaussian',
                filter_denom=False, denom_eps=1e-3, pos_threshold=1e-6):
 	"""
@@ -352,7 +401,6 @@ def _alpha_func_direct_1d_numba(grid, observations, t_scale, k_kernel_arr, dx,
 # kde with histograms
 def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
                             log_eps=1e-10, denom_eps=1e-8):
-	raise NotImplementedError("this method does not work very well and is rather untested")
 	q_L_approx = compute_kde_binned_fft(x=grid, observations=observations, norm_scale=t_scale, dx=dx)
 	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
 	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
@@ -372,6 +420,12 @@ def _alpha_func_direct_2d_numba(grid, observations, t_scale, k_kernel_arr, dx, l
 	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
 	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
 
+
+def _alpha_func_direct_2d_fast_kde(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
+	q_L_approx = fast_fft_kde_2d_standalone(grid=grid, observations=observations, bandwidth=np.sqrt(t_scale))
+	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
+	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
+	return np.exp(k_log_conv) / (denom_eps + k_ql_conv)
 
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
