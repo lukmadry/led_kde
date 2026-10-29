@@ -1,1 +1,8 @@
 *sync-conflict*.py
+*.ipynb
+*.json
+*.html
+*.png
+*.jpeg
+*.zip
+TODO.txt
