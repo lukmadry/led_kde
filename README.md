@@ -31,13 +31,14 @@ python3 run.py --help
 
 Structure of a repository:
 ```
-run.py - main file which is a front to run experiments
-kde.py - a file which contains computations of KDE, alpha function in LED-KDE and samplers
-pipelines.py - pipelines that prepare necessary objects to run functions from kde.py
-distributions.py - objects that prepare initial distributions. For now mixtures of gaussians and uniforms
-logops.py - helper functions that deal with logging results
-tools.py - some tools that are used in at least one place
+run.py - main file which is a front to run experiments, calling scripts from src module
 tests.py - some unit tests. There is no 100% test coverage though. If run with --profil will run a simple profiling
+src/
+  kde.py - a file which contains computations of KDE, alpha function in LED-KDE and samplers
+  pipelines.py - pipelines that prepare necessary objects to run functions from kde.py
+  distributions.py - objects that prepare initial distributions. For now mixtures of gaussians and uniforms
+  logops.py - helper functions that deal with logging results
+  tools.py - some tools that are used in at least one place
 ```
 
 Example scripts:
