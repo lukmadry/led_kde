@@ -1,4 +1,6 @@
-This repository contains computations for LED-KDE. 
+This repository contains computations for LED-KDE, which is a new method for inferring a density from observations. The repository contains tests for the recursive data generation under this new method.
+
+Work in progress, under active development.
 
 Run the script using run.py. Important parameters (extract from help in run.py):
 
