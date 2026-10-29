@@ -7,10 +7,10 @@ import argparse
 import os
 
 # other parts of the project
-import distributions
-from tools import support_width, run_dimension_consistency_check, validate_distribution_args
-from logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
-from pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
+import src.distributions as distributions
+from src.tools import support_width, run_dimension_consistency_check, validate_distribution_args
+from src.logops import log_results, find_datetime_with_this_params, PARAMETER_KEYS
+from src.pipelines import (run_recurrent_led_with_data_forgetting_1d, run_recurrent_kde_with_forgetting,
                        run_recurrent_kde_with_retaining, run_recurrent_led_with_data_retaining_2d,
                        run_recurrent_led_with_data_retaining_1d, run_recurrent_led_with_data_forgetting_2d,
                        run_recurrent_kde_with_data_forgetting_2d)
