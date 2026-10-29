@@ -180,7 +180,7 @@ if __name__ == '__main__':
 		debug=args.debug,
 		seed=rng_generator)
 
-	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nKDE with numba: {args.fast_kde}\n"
+	setup_message = (f"Dimension: {dim}.\nSpeed-ups activated:\nFFT KDE with binning: {args.fast_kde}\n"
 	                    f"FFT with cutoff in the kernel: {args.with_fft_cutoff}\n"
 	                    f"Vectorised importance sampling: {args.fast_is}.\nVerbosity: {args.verbose}.\n")
 	if args.verbose:

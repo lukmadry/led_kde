@@ -5,7 +5,7 @@ from scipy.stats import norm
 
 from kde import (alpha_func, compute_led_kde, compute_kde, sample_led_kde, sample_led_kde_direct_raw_fast_is,
                  compute_kde_gaussian_numba_wrapper, compute_kde_binned_fft, compute_kde_1d_sklearn,
-                 _kde_2d_kernel, compute_kde_2d, _alpha_func_direct_1d_numba)
+                 _kde_2d_kernel, compute_kde_2d, _alpha_func_direct_1d_numba, compute_kde_2d_fftbin)
 from tools import exact_gaussian_1d, match_x_to_grid_and_val_1d, compute_gaussian_kernel_1d
 from functools import partial
 from distributions import GaussianMixture, UniformMixture, UniformBoxMixture
@@ -102,12 +102,17 @@ class TestApproximations(unittest.TestCase):
 	                                                    [-1, -1, -1, -1, -1, 0, 0, 0, 0, 0, 1, 1,1,1,1])),
 	                                     shapes=[[1, 1]], weights=[10, 5, 1, 5, 10, 1, 3, 9, 3, 1, 5, 10, 1, 10, 7])
 
+	grid_x, grid_y = np.linspace(-5, 5, num=500 | 1), np.linspace(-5, 5, num=500 | 1)
+	dxx = grid_x[1] - grid_x[0]
+	grid = np.meshgrid(grid_x, grid_y)
+	grid = np.dstack(grid)
+
 	def test_kde_binning(self):
 
-		unif_samples = self.unif_mixture.rvs(1000)
+		unif_samples = self.unif_mixture.rvs(10000)
 		kde_gaussians_gt = compute_kde_gaussian_numba_wrapper(self.xgrid, unif_samples, self.var)
 		kde_binned = compute_kde_binned_fft(self.xgrid, unif_samples, self.var, self.dx)
-		print(f"Error between ground truth gaussians and KDE is: {np.max(np.abs(kde_gaussians_gt - kde_binned))}")
+		self.assertTrue(np.allclose(kde_gaussians_gt, kde_binned, rtol=1e-4, atol=1e-4))
 
 	def test_kde_sklearn(self):
 
@@ -125,9 +130,6 @@ class TestApproximations(unittest.TestCase):
 		self.assertTrue(er_unif < 1e-10)
 		self.assertTrue(er_gaus < 1e-10)
 
-	def test_kde_2d_sklearn(self):
-
-		pass
 
 # profiling
 def profile_function(func, runs = 5, verbose=False, *args, **kwargs):
@@ -201,6 +203,21 @@ def profile_kde_2d_sklearn(runs = 10, grid_sizes = [100, 500, 1000], sample_size
 			obs = unif_box_mixture.rvs(s)
 			# print(f"Grid size {g}, sample size {s}")
 			avg, mint, maxt = profile_function(compute_kde_2d, runs=runs, x=grid, observations=obs, variance=0.01)
+			average_times.append((g, s, avg))
+	return average_times
+
+
+def profile_kde_2d_fftbin(runs = 10, grid_sizes = [100, 500, 1000], sample_sizes = [1000, 5000, 10000]):
+	average_times = []
+	for g in grid_sizes:
+		grid_x, grid_y = np.linspace(-5, 5, num=g), np.linspace(-5, 5,num=g)
+		grid = np.meshgrid(grid_x, grid_y)
+		grid = np.dstack(grid)
+
+		for s in sample_sizes:
+			obs = unif_box_mixture.rvs(s)
+			# print(f"Grid size {g}, sample size {s}")
+			avg, mint, maxt = profile_function(compute_kde_2d_fftbin, runs=runs, x=grid, observations=obs, variance=0.01)
 			average_times.append((g, s, avg))
 	return average_times
 
@@ -290,12 +307,10 @@ if __name__ == '__main__':
 		kde_avg_times = profile_kde(K)
 		print("Profiling KDE with numba")
 		kde_numba_avg_times = profile_kde_numba(K)
-		print("Profiling KDE 2D with numba")
-		kde_numba_2d = profile_kde_numba(K)
 		print("Profiling KDE with sklearn")
 		kde_sklearn = profile_kde_sklearn_1d(K)
-		# print("Profiling KDE 2d with sklearn") takes forever, will be dropped in the main pipeline
-		# kde_sklearn_2d = profile_kde_2d_sklearn(K)
+		print("Profiling KDE 2d with fftbin")
+		kde_2d_fftbin = profile_kde_2d_fftbin(K)
 		print("Profiling KDE with cutoff")
 		kde_cutoff_avg_times = profile_kde_cutoff(K)
 		print("Profiling alpha function")
@@ -304,9 +319,9 @@ if __name__ == '__main__':
 		led_sampling = profile_sampling_led(K)
 
 		for fname, arr in zip(['kde', 'kde_cutoff', 'kde_numba',  'alpha',
-		                       'led', 'kde_sklearn', 'kde_2d_numba', 'led_fast_is'],
+		                       'led', 'kde_sklearn', 'led_fast_is', 'kde_2d_fftbin'],
 							  [kde_avg_times, kde_cutoff_avg_times, kde_numba_avg_times, alpha_avg_times,
-							   led_sampling, kde_sklearn, kde_numba_2d, led_sampling_fast]):
+							   led_sampling, kde_sklearn, led_sampling_fast, kde_2d_fftbin]):
 			print(fname)
 			for g, s, avg in arr:
 				print(f"Grid size: {g}, sample size: {s}, average time: {1000*avg:.4f}ms")

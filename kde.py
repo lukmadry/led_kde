@@ -240,14 +240,17 @@ def compute_kde_gaussian_2d_numba(x, observations, norm_scale=None, keep_shape=T
 		return kde_vals.reshape(orig_dim)
 	return kde_vals
 
-def compute_kde_scott_2d(x, observations, keep_shape=True):
+def compute_kde_scott_2d(x, observations, keep_shape=True, fast=False):
 	"""
 	wrapper for compute_kde_2d that itself wraps the sklearn... (artefact from previous no-sklearn variant)
 	"""
 	N = observations.shape[0]
 	sddev = N**(-1/6.)
 
-	return compute_kde_gaussian_2d_numba(x, observations, sddev**2, keep_shape=keep_shape)
+	if not fast:
+		return compute_kde_gaussian_2d_numba(x, observations, sddev**2, keep_shape=keep_shape)
+	else:
+		return compute_kde_2d_fftbin(x, observations, sddev**2, keep_shape=keep_shape)
 
 def compute_kde_scott(x, observations):
 	"""
@@ -326,7 +329,7 @@ def fast_fft_kde_2d_standalone(
 	return density
 
 def compute_kde_2d_fftbin(x, observations, variance, keep_shape=True):
-	if x.shape != 3:
+	if len(x.shape) != 3:
 		raise ValueError("x must be a grid")
 	return fast_fft_kde_2d_standalone(grid=x, observations=observations, bandwidth=np.sqrt(variance))
 

@@ -18,7 +18,7 @@ from kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
                  compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
                  _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba,
                  compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d,
-                 _alpha_func_direct_2d_numba, compute_kde_binned_fft)
+                 _alpha_func_direct_2d_numba, compute_kde_binned_fft, _alpha_func_direct_2d_fast_kde)
 from logops import print_statistics_for_forget, print_statistics_for_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
@@ -204,6 +204,7 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 	radius = dx * grid_size
 	kernel_arr = compute_gaussian_kernel_2d(grid, radius, k_scale)
 	matcher_fn = partial(match_x_to_grid_and_val_2d, method=interpolation)
+	alpha_func = _alpha_func_direct_2d_fast_kde if fast else _alpha_func_direct_2d_numba
 	pbar_length = max(50, int(n_trials / verbosity_freq))
 	descriptive_metrics = descriptive_fns_sentinel(descriptive_metrics, 2)
 	comparative_metrics = comparative_fns_sentinel(comparative_metrics, 2)
@@ -220,7 +221,7 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 				n_samples=n_samples, observations=obs, grid=grid, t_scale=t_scale,
 				t_sampler=t_sampler, k_sampler=k_sampler, k_kernel_arr=kernel_arr,
 				alpha_log_eps=alpha_log_eps, alpha_denom_eps=alpha_denom_eps, dx=dx,
-				alpha_func_obj=_alpha_func_direct_2d_numba, matcher_fn=matcher_fn, ndim=2, seed=seed, debug=debug
+				alpha_func_obj=alpha_func, matcher_fn=matcher_fn, ndim=2, seed=seed, debug=debug
 			)
 		except StrangeAlphaException as err:
 			print(f"Iteration {i}")
@@ -233,7 +234,7 @@ def run_recurrent_led_2d(n_trials, initial_observations, grid, dx, grid_size,
 			print('statistics of sampled observations: ',
 			      led_samples[:, 0].mean(), led_samples[:, 1].mean(), led_samples[:, 0].std(), led_samples[:, 1].std())
 		obs = update_fn(obs, led_samples)
-		local_led_pdf = compute_kde_scott_2d(x=grid, observations=obs)
+		local_led_pdf = compute_kde_scott_2d(x=grid, observations=obs, fast=fast)
 		all_pdfs.append(local_led_pdf)
 
 		stat = print_fn(local_led_pdf, obs, descriptive_metrics + comparative_metrics,
