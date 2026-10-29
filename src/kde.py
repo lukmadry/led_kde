@@ -3,22 +3,24 @@ import math
 from functools import partial
 from numbers import Number
 import numba as nb
-import time # for profiling
 
-from scipy.stats import norm, multivariate_normal, uniform
+from scipy.stats import norm
 from scipy.signal import fftconvolve
 from sklearn.neighbors import KernelDensity
 
 from .tools import (convolve_continuous_grid, exact_unif_1d, exact_gaussian_1d,
-                   StrangeAlphaException, sample_via_importance_resampling, exact_gaussian_1d_cutoff,
-                   match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, convolve_cont_grid_1d_with_kernel,
-                   convolve_cont_grid_2d_with_kernel, NegativeProbabilityError, none_sentinel, _interpret_two_dim_grid)
+                    exact_gaussian_1d_cutoff,
+                    match_x_to_grid_and_val_1d, match_x_to_grid_and_val_2d, none_sentinel, _interpret_two_dim_grid)
 
 # if you use exact_gaussian_1d_cutoff then it's comparable in speed with gaussian_kde from scipy for N = 1000, and wins for visibly bigger N
 # I guess that scipy does a lot of other stuff under the hood
 # however it cuts the function a little bit and I haven't tested systematically yet if it makes the difference, so keeping it as a separate option
 # TODO move some of the numerical tests into a separate file so that one can always re-test them if needed
 # TODO I think this can be entirely replace by a scikit-learn methods, just need to be carefuly about their bandwith parameter
+
+""" 1D KDE """
+
+
 def compute_kde(x, observations, norm_scale, kernel='gaussian'):
 	"""
 	Function that computes kde, i.e. for empirical measure mu^N = 1/N sum_{i=1}^N delta_{X_i} the result is
@@ -129,6 +131,45 @@ def compute_kde_binned_fft(x, observations, norm_scale, dx):
 	density = fftconvolve(weights, kernel_vals, mode="same")
 	return density
 
+# actually we're not using this, but it was a hypothesis which remains in a profiling suite
+def compute_kde_1d_sklearn(x, observations, variance):
+
+	kde = KernelDensity(bandwidth=np.sqrt(variance))
+	kde.fit(observations.reshape(-1, 1))
+	prob_grid = np.exp(kde.score_samples(x.reshape(-1, 1)))  # score_samples yields logprobability
+
+	return prob_grid
+
+
+
+def compute_kde_scott(x, observations):
+	"""
+	computes KDE where the choice of bandwith is done with Scott's method
+
+	x : np.ndarray or a float. If np.ndarray applied componentwise
+	observations : np.ndarray (N, ) type float
+	"""
+	N = len(observations)
+	h = N**(-1/5.)
+	val = 0
+	for i in range(N):
+		val += norm.pdf(x - observations[i], scale=h)
+	return val/N
+
+def kde_sampled_pdf_wrapper(x, grid, kde):
+	if isinstance(x, Number):
+		x = [x]
+	vals = []
+	for v in x:
+		vals.append(match_x_to_grid_and_val_1d(v, grid, kde, interpolation=True))
+	return vals
+
+def kde_sampled_pdf_func(grid, kde):
+	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
+
+
+""" 2D KDE """
+
 # a wrapper for KDE from sklearn, on grid of size 400 the old version takes 2 minutes and this one 4 seconds
 def compute_kde_2d(x, observations, variance, keep_shape=True):
 	if len(observations.shape) != 2:
@@ -151,14 +192,6 @@ def compute_kde_2d(x, observations, variance, keep_shape=True):
 		return prob_grid.reshape(orig_dim)
 	return prob_grid
 
-# actually we're not using this, but it was a hypothesis which remains in a profiling suite
-def compute_kde_1d_sklearn(x, observations, variance):
-
-	kde = KernelDensity(bandwidth=np.sqrt(variance))
-	kde.fit(observations.reshape(-1, 1))
-	prob_grid = np.exp(kde.score_samples(x.reshape(-1, 1)))  # score_samples yields logprobability
-
-	return prob_grid
 
 # not necessary anymore, keeping it for myself for reference just in case
 def compute_kde_2d_by_hand(x, observations, variance,
@@ -252,31 +285,6 @@ def compute_kde_scott_2d(x, observations, keep_shape=True, fast=False):
 	else:
 		return compute_kde_2d_fftbin(x, observations, sddev**2, keep_shape=keep_shape)
 
-def compute_kde_scott(x, observations):
-	"""
-	computes KDE where the choice of bandwith is done with Scott's method
-
-	x : np.ndarray or a float. If np.ndarray applied componentwise
-	observations : np.ndarray (N, ) type float
-	"""
-	N = len(observations)
-	h = N**(-1/5.)
-	val = 0
-	for i in range(N):
-		val += norm.pdf(x - observations[i], scale=h)
-	return val/N
-
-def kde_sampled_pdf_wrapper(x, grid, kde):
-	if isinstance(x, Number):
-		x = [x]
-	vals = []
-	for v in x:
-		vals.append(match_x_to_grid_and_val_1d(v, grid, kde, interpolation=True))
-	return vals
-
-def kde_sampled_pdf_func(grid, kde):
-	return partial(kde_sampled_pdf_wrapper, grid=grid, kde=kde)
-
 
 def kde_sampled_pdf_func_2d(grid, kde):
 	def fn(x):
@@ -333,102 +341,12 @@ def compute_kde_2d_fftbin(x, observations, variance, keep_shape=True):
 		raise ValueError("x must be a grid")
 	return fast_fft_kde_2d_standalone(grid=x, observations=observations, bandwidth=np.sqrt(variance))
 
-def alpha_func(grid, observations, t_scale, k_scale, log_eps=1e-10, kernel='gaussian',
-               filter_denom=False, denom_eps=1e-3, pos_threshold=1e-6):
-	"""
-	Computes \alpha from LED-KDE. Two-dimensional is at the moment (22/09) experimental so not described in details
-	in a docstring.
-
-	grid : np.ndarray (D, ). Grid with evenly spaced values, typically a result of linspace
-	observations : np.ndarray (N, )
-	t_scale : float, variance of the first, inner kernel
-	k_scale : float, variance of the second, outer kernel
-	eps : float, epsilon value which will be added to log for numerical stability
-	kernel : str, gaussian or uniform, choice of a kernel. If uniform, then {t,k}_scale are widths
-	filter_denom : bool, if True then will give only the values where denominator is positive.
-			Most likely will be deprecated
-	denom_eps : epsilon added to the denominator
-
-	"""
-	# print(grid.shape)
-	# print("log epsilon: ", log_eps)
-	# print("denom epsilon: ", denom_eps)
-	if len(observations.shape) == 2:
-		grid_orig_shape = grid.shape
-		q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale, keep_shape=True)
-		q_L_approx = q_L_approx.reshape(grid_orig_shape[:2])
-		k_norm_factor = 1 / (2.0 * np.pi * k_scale)
-		k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs).sum(axis=-1) / (2.0 * k_scale))
-		radius = 50*k_scale
-		# print("qlapprox ", q_L_approx.max(), q_L_approx.min(), q_L_approx.std(), q_L_approx.mean())
-	else:
-		q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel=kernel)
-		if kernel == 'gaussian_cutoff':
-			k_pdf = partial(exact_gaussian_1d_cutoff, var=k_scale)
-			# k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
-			# k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
-		elif kernel == 'gaussian':
-			k_norm_factor = 1/ np.sqrt(2.0 * np.pi * k_scale)
-			k_pdf = lambda diffs: k_norm_factor * np.exp(- np.square(diffs) / (2.0 * k_scale))
-		elif kernel == 'uniform':
-			k_pdf = partial(exact_unif_1d, width=k_scale)
-		else:
-			raise ValueError("kernel has to be either gaussian or uniform")
-		radius = None
-	k_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=q_L_approx, x_grid=grid, radius=radius)
-	# print("k_ql_conv ", k_ql_conv.min(), k_ql_conv.max(), k_ql_conv.mean(), k_ql_conv.std())
-	k_log_ql_conv = convolve_continuous_grid(f_pdf=k_pdf, g_pdf_grid=np.log(log_eps + q_L_approx), x_grid=grid, radius=radius)
-	# print("k_log_ql_conv ", k_log_ql_conv.min(), k_log_ql_conv.max(), k_log_ql_conv.mean(), k_log_ql_conv.std())
-	if filter_denom:
-		where_pos = np.where(k_ql_conv > pos_threshold)[0]
-		return np.exp(k_log_ql_conv[where_pos])/k_ql_conv[where_pos], where_pos
-	else:
-		return np.exp(k_log_ql_conv)/(denom_eps+k_ql_conv)
 
 # the difference is that you need to give a ready kernel and we will not question it
-def _alpha_func_direct_1d(grid, observations, t_scale, k_kernel_arr, dx,
-                          log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale, kernel='gaussian')
-	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
-	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
-	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
-
-def _alpha_func_direct_1d_numba(grid, observations, t_scale, k_kernel_arr, dx,
-                          log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = compute_kde_gaussian_1d_numba(x=grid, observations=observations, var=t_scale)
-	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
-	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
-	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
 
 
 # kde with histograms
-def _alpha_func_fast_approx_1d(grid, observations, t_scale, k_kernel_arr, dx,
-                            log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = compute_kde_binned_fft(x=grid, observations=observations, norm_scale=t_scale, dx=dx)
-	k_ql_conv = convolve_cont_grid_1d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx
-	k_loq_conv = convolve_cont_grid_1d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr) * dx
-	return np.exp(k_loq_conv)/(denom_eps+k_ql_conv)
 
-def _alpha_func_direct_2d(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = compute_kde_2d(x=grid, observations=observations, variance=t_scale)
-	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
-	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
-	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
-	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
-
-def _alpha_func_direct_2d_numba(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = compute_kde_gaussian_2d_numba(x=grid, observations=observations, variance=t_scale)
-	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
-	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx),
-	                                               kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
-	return np.exp(k_log_conv)/(denom_eps+k_ql_conv)
-
-
-def _alpha_func_direct_2d_fast_kde(grid, observations, t_scale, k_kernel_arr, dx, log_eps=1e-10, denom_eps=1e-8):
-	q_L_approx = fast_fft_kde_2d_standalone(grid=grid, observations=observations, bandwidth=np.sqrt(t_scale))
-	k_ql_conv = convolve_cont_grid_2d_with_kernel(base=q_L_approx, kernel=k_kernel_arr) * dx * dx
-	k_log_conv = convolve_cont_grid_2d_with_kernel(base=np.log(log_eps+q_L_approx), kernel=k_kernel_arr, val_to_pad=np.log(log_eps)) * dx * dx
-	return np.exp(k_log_conv) / (denom_eps + k_ql_conv)
 
 def compute_led_kde(grid, observations, t_scale, k_pdf, eps=1e-8):
 	q_L_approx = compute_kde(x=grid, observations=observations, norm_scale=t_scale)
@@ -466,156 +384,3 @@ def compute_led_kde_2d(pts_list, observations, t_param, k_param, eps=1e-8,
 	Z = np.sum(expklog) * dx * dy
 	return expklog / Z
 
-# TODO method: standard does not work very well with 2D. Maybe it's possible to fix.
-def sample_led_kde(n_samples, observations, grid, t_scale, k_scale,
-				   verbose= False, display_every=20, kernel='gaussian',
-				   alpha_filter_denom=True, interpolation=True, alpha_log_eps=1e-10,
-                   alpha_denom_eps=1e-3, debug=False, alpha_grid=None):
-	"""
-	Samples observations with the LED-KDE method. If a parameter shares the name with one in alpha_func,
-	it is identical to the description there and we will not repeat it here.
-
-	n_samples : number of samples
-	verbose : bool, True for printing some progress
-	display_every : int will tell you that we sampled k values
-	alpha_grid : np.ndarray, you can pass already computed alpha grid, this way computation here will be skipped
-	interpolation : bool, whether the values samples will be interpolated to alpha or taken to be equal to values on the grid
-				scheme tends to perform better if True
-	sampling_method : str, 'standard' samples alpha function with special LED-KDE algorithm,
-			'is' samples with importance sampling based on the density computation from alpha
-	"""
-	N = len(observations)
-	ndim = len(observations.shape)
-	if debug:
-		print(f"Mean: {np.mean(observations):.2f}, std: {np.std(observations):.2f}")
-		print(f"Grid shape: {grid.shape}")
-	# precompute \alpha here (maybe you can factor it out, it was separated for testing and profiling)
-	if alpha_grid is None:
-		if alpha_filter_denom:
-			alpha_grid, where_pos = alpha_func(grid, observations, t_scale, k_scale,
-			                                   filter_denom=alpha_filter_denom)
-			grid_pos = grid[where_pos]
-		else:
-			alpha_grid = alpha_func(grid, observations, t_scale, k_scale, filter_denom=alpha_filter_denom,
-			                        denom_eps=alpha_denom_eps, log_eps=alpha_log_eps)
-			grid_pos = grid
-	else:
-		grid_pos = grid
-	if np.max(alpha_grid) > 1.01:
-		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
-									np.max(alpha_grid))
-	matcher = match_x_to_grid_and_val_1d if ndim == 1 else match_x_to_grid_and_val_2d
-	# start = time.perf_counter()
-	if ndim == 1 and kernel == 'gaussian':
-		k_sampler = norm(loc=0, scale=np.sqrt(k_scale)).rvs
-		l_sampler = norm(loc=0, scale=np.sqrt(t_scale)).rvs
-		vals = np.zeros(n_samples)
-	elif ndim == 1 and kernel == 'uniform':
-		k_sampler = uniform(scale=k_scale).rvs
-		l_sampler = uniform(scale=t_scale).rvs
-		vals = np.zeros(n_samples)
-	elif ndim == 2:
-		k_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*k_scale).rvs
-		l_sampler = multivariate_normal(mean=[0,0], cov=np.eye(2)*t_scale).rvs
-		vals = np.zeros((n_samples, 2))
-	else:
-		raise ValueError("ndim, inferred from shape of observations, must be 1 or 2")
-	# end = time.perf_counter()
-	# print(f"creating samplers take: {1000*(end-start):.3f} ms")
-
-	# start = time.perf_counter()
-	for i in range(n_samples):
-
-		reject = True
-		while reject:
-			I = np.random.randint(N)
-			u = l_sampler()
-			w = k_sampler()
-			R = np.random.uniform()
-			X = observations[I] - u - w
-
-			alph_val = matcher(X, grid_pos, alpha_grid, interpolation=interpolation) # technically it works with 2D but not super well
-			if R < alph_val:
-				vals[i] = X
-				reject = False
-		if verbose and (1+i) % display_every == 0:
-			print(f"Sampled {1+i}/{n_samples} samples.", end="\r")
-	# end = time.perf_counter()
-	# print(f"Sampling takes: {1000*(end-start):.3f}ms (this part has to be repeated)")
-	return vals
-
-# reproduces the function above, but blocks that are repeated often in many runs are taken outside
-def sample_led_kde_direct_raw(n_samples, observations, grid, t_scale,
-                              t_sampler, k_kernel_arr, k_sampler, dx,
-                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3,
-                              interpolation=True, alpha_func_obj=_alpha_func_direct_1d,
-                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1, *args, **kwargs):
-	alpha_grid = alpha_func_obj(grid=grid, observations=observations,
-                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
-                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
-	if np.max(alpha_grid) > 1.01:
-		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
-									np.max(alpha_grid))
-	vals = np.zeros(n_samples) if ndim == 1 else np.zeros((n_samples, 2))
-	N = len(observations)
-	for i in range(n_samples):
-		reject = True
-		while reject:
-			I = np.random.randint(N)
-			u = t_sampler()
-			w = k_sampler()
-			R = np.random.uniform()
-			X = observations[I] - u - w
-
-			alph_val = matcher_fn(X, grid, alpha_grid,
-			                                interpolation=interpolation)  # technically it works with 2D but not super well
-			if R < alph_val:
-				vals[i] = X
-				reject = False
-
-	return vals
-
-# faster variant, to be tested if it gives the same exact thing
-# can it work out of the box with 2D ? yes I think it does
-def sample_led_kde_direct_raw_fast_is(n_samples, observations, grid, t_scale,
-                              t_sampler, k_kernel_arr, k_sampler, dx,
-                              alpha_log_eps=1e-10, alpha_denom_eps=1e-3, cands_multiplier=10,
-                              alpha_func_obj=_alpha_func_direct_1d, alpha_grid=None,
-                              matcher_fn=match_x_to_grid_and_val_1d, ndim=1, seed=None, debug=False):
-	if alpha_grid is None:
-		alpha_grid = alpha_func_obj(grid=grid, observations=observations,
-	                               t_scale=t_scale, k_kernel_arr=k_kernel_arr,
-	                               log_eps=alpha_log_eps, denom_eps=alpha_denom_eps, dx=dx)
-	# if debug:
-	# 	print("alpha control stats: ", alpha_grid.mean(), alpha_grid.std())
-	if np.max(alpha_grid) > 1.01:
-		raise StrangeAlphaException(f"something strange happened with alpha_grid, maximum value is {np.max(alpha_grid)}",
-									np.max(alpha_grid))
-	N = len(observations)
-	n_candidates = cands_multiplier * n_samples
-	u = t_sampler(size=n_candidates)
-	w = k_sampler(size=n_candidates)
-	if seed is None:
-		seed = np.random
-		idx = seed.randint(low=0, high=N, size=n_candidates) # TODO complain about it on a numpy forum or whatnot
-	else:
-		idx = seed.integers(low=0,high=N, size=n_candidates)
-	# if debug:
-	# 	print("first indices sampled: ", idx[:5])
-	X = observations[idx] - u - w
-	# if debug:
-	# 	print("first values sampled: ", X[:5])
-	alph_weights = matcher_fn(X, grid, alpha_grid, interpolation=True)
-	if np.any(alph_weights > -1e-6): #sufficiently small that we can consider it an approximation error
-		alph_weights = np.maximum(alph_weights, 0)
-	else:
-		raise NegativeProbabilityError(f"Observed negative probability of {np.min(alph_weights)}. "
-		                               f"Stopping the run, you may consider rerunning the same "
-		                               f"trial with linear interpolation", np.min(alph_weights))
-	alph_weights /= np.sum(alph_weights)
-	resampled_indices = seed.choice(
-		n_candidates, size=n_samples, replace=True, p=alph_weights
-	)
-	if debug:
-		print("first resampled indices: ", resampled_indices[:5])
-	return X[resampled_indices]

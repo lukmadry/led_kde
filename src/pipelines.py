@@ -15,10 +15,11 @@ from .tools import (sample_via_importance_resampling, support_width, support_wid
                    compute_l2_wasserstein_1d, compute_kl_divergence, wasserstein_from_pdfs_1d, NegativeProbabilityError,
                    estimate_bounding_radius_2d, comparative_fns_sentinel, sliced_wasserstein_2d)
 from .kde import (compute_kde, kde_sampled_pdf_func, compute_kde_scott,
-                 compute_kde_scott_2d, sample_led_kde_direct_raw, _alpha_func_direct_1d, _alpha_func_fast_approx_1d,
-                 _alpha_func_direct_2d, sample_led_kde_direct_raw_fast_is, _alpha_func_direct_1d_numba,
-                 compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d,
-                 _alpha_func_direct_2d_numba, compute_kde_binned_fft, _alpha_func_direct_2d_fast_kde)
+                  compute_kde_scott_2d, compute_kde_gaussian_1d_numba, compute_kde_gaussian_2d_numba, kde_sampled_pdf_func_2d,
+                  compute_kde_binned_fft)
+from .sampling import sample_led_kde_direct_raw, sample_led_kde_direct_raw_fast_is
+from .alpha import _alpha_func_direct_1d, _alpha_func_direct_1d_numba, _alpha_func_fast_approx_1d, \
+	_alpha_func_direct_2d, _alpha_func_direct_2d_numba, _alpha_func_direct_2d_fast_kde
 from .logops import print_statistics_for_forget, print_statistics_for_retain, build_progress_bar
 
 descriptive_functions = {'mean': np.mean, 'sd': np.std, 'median': np.median,
